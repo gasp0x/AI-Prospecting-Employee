@@ -1,0 +1,21 @@
+# Dados locais (banco SQLite, WAL e exportações)
+data/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+
+# Ambiente e segredos
+.venv/
+venv/
+.env
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Sistema
+.DS_Store
+
+# Evidências de teste de interface
+gui-test-screenshots/

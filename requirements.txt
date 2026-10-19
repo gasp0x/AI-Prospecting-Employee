@@ -1,0 +1,11 @@
+# Dependências do AI Prospecting Employee (instalado e testado em macOS 15.7 Intel x86_64, Python 3.11)
+# Todas com licenças permissivas (MIT/BSD/Apache) e wheels oficiais para macOS x86_64.
+fastapi==0.149.0          # MIT   — API HTTP + WebSocket em um único processo
+starlette==1.9.0          # BSD   — base do FastAPI (dependência transitiva)
+uvicorn==0.54.0           # BSD   — servidor ASGI local
+websockets==17.3          # BSD   — suporte WebSocket do uvicorn (conexão com a extensão)
+httpx==0.28.1             # BSD   — cliente HTTP para conectores de fontes públicas
+Jinja2==3.1.6             # BSD   — templates server-side pt-BR (sem build de frontend)
+pydantic==2.14.1          # MIT   — validação de dados (dependência do FastAPI)
+python-multipart==0.0.32  # Apache-2.0 — parsing de formulários HTML
+pytest==9.1.1             # MIT   — testes (somente desenvolvimento)

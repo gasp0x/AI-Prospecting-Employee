@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block titulo %}Auditoria — {{ titulo }}{% endblock %}
+{% block conteudo %}
+<h1>Registro de auditoria</h1>
+
+<section class="cartao">
+  <p class="detalhe" style="color:var(--suave);font-size:13px;margin-top:0">
+    Toda ação relevante fica registrada: ICPs criados, pesquisas iniciadas/canceladas, aprovações
+    pedidas/decididas/executadas, conexões da extensão e ações locais no macOS.
+  </p>
+  <table class="tabela">
+    <thead><tr><th>Quando</th><th>Ator</th><th>Ação</th><th>Detalhes</th></tr></thead>
+    <tbody>
+      {% for r in registros %}
+      <tr>
+        <td class="detalhe">{{ r.ts }}</td>
+        <td>{{ r.ator }}</td>
+        <td><code>{{ r.acao }}</code></td>
+        <td class="detalhe" style="max-width:480px;word-break:break-all">{{ r.detalhes_json }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="detalhe">Sem registros.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

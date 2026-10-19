@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block titulo %}Exportar — {{ titulo }}{% endblock %}
+{% block conteudo %}
+<h1>Exportar resultados</h1>
+
+<section class="cartao">
+  <h2>Empresas por ICP</h2>
+  <table class="tabela">
+    <thead><tr><th>ICP</th><th>Empresas</th><th>CSV</th><th>JSON</th></tr></thead>
+    <tbody>
+      {% for i in icps %}
+      <tr>
+        <td><strong>#{{ i.id }}</strong> {{ i.texto_bruto[:70] }}…</td>
+        <td>{{ contagens.get(i.id, 0) }}</td>
+        <td><a class="botao secundario" href="/exportar/empresas?icp={{ i.id }}&formato=csv">⤓ CSV</a></td>
+        <td><a class="botao secundario" href="/exportar/empresas?icp={{ i.id }}&formato=json">⤓ JSON</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="detalhe">Nenhum ICP cadastrado.</td></tr>
+      {% endfor %}
+      {% if icps %}
+      <tr>
+        <td><strong>Todos os ICPs</strong></td>
+        <td>{{ contagens.values() | sum }}</td>
+        <td><a class="botao secundario" href="/exportar/empresas?formato=csv">⤓ CSV</a></td>
+        <td><a class="botao secundario" href="/exportar/empresas?formato=json">⤓ JSON</a></td>
+      </tr>
+      {% endif %}
+    </tbody>
+  </table>
+  <p class="detalhe" style="color:var(--suave);font-size:13px;margin-bottom:0">
+    O CSV usa separador “;” (abre direto no Excel pt-BR). O JSON inclui fontes, evidências e a
+    explicação completa da pontuação — adequado para reimportação e auditoria.
+  </p>
+</section>
+{% endblock %}

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { width: 320px; margin: 0; font: 13px -apple-system, "Helvetica Neue", sans-serif; color: #1c2430; }
+    header { padding: 12px 14px; background: #14532d; color: #fff; }
+    header strong { font-size: 14px; }
+    header span { display: block; font-size: 11px; opacity: .85; margin-top: 2px; }
+    section { padding: 12px 14px; border-bottom: 1px solid #e5e7eb; }
+    label { display: block; font-size: 11px; color: #5b6675; margin: 8px 0 3px; text-transform: uppercase; }
+    input { width: 100%; box-sizing: border-box; padding: 7px 9px; border: 1px solid #d9dee5; border-radius: 6px; font: inherit; }
+    .linha { display: flex; gap: 6px; margin-top: 10px; }
+    button { flex: 1; padding: 8px 10px; border: 0; border-radius: 6px; font: inherit; cursor: pointer; }
+    #btn-conectar { background: #14532d; color: #fff; }
+    #btn-desconectar { background: #eef1f5; }
+    .status { font-size: 12px; margin-top: 8px; }
+    .ok { color: #166534; } .falha { color: #b91c1c; }
+    .pedido { border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 10px; margin-top: 8px; }
+    .pedido .tipo { font-weight: 700; }
+    .pedido .justificativa { color: #5b6675; font-size: 12px; margin: 4px 0; }
+    .pedido .acoes { display: flex; gap: 6px; }
+    .permitir { background: #14532d; color: #fff; }
+    .negar { background: #eef1f5; }
+    .vazio { color: #5b6675; font-size: 12px; }
+    footer { padding: 10px 14px; font-size: 11px; color: #5b6675; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>AI Prospecting Employee</strong>
+    <span>ponte local · só age com o seu clique · nunca lê cookies/senhas</span>
+  </header>
+
+  <section id="pedidos">
+    <strong>Pedidos do agente</strong>
+    <div id="lista-pedidos"><p class="vazio">Nenhum pedido pendente.</p></div>
+  </section>
+
+  <section>
+    <strong>Conexão com o app local</strong>
+    <label for="servidor">Servidor</label>
+    <input id="servidor" placeholder="ws://127.0.0.1:8734/ws/extensao">
+    <label for="token">Token (se configurado no .env)</label>
+    <input id="token" placeholder="opcional">
+    <div class="linha">
+      <button id="btn-conectar">Conectar</button>
+      <button id="btn-desconectar">Desconectar</button>
+    </div>
+    <div id="status" class="status">verificando…</div>
+  </section>
+
+  <footer>
+    O agente lê somente o texto visível da aba que você autorizar, e envia tudo para
+    <code>127.0.0.1</code> (sua máquina). Nada é enviado para serviços externos.
+  </footer>
+
+  <script src="popup.js"></script>
+</body>
+</html>

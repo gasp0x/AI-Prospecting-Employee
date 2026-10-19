@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block titulo %}Resultados — {{ titulo }}{% endblock %}
+{% block conteudo %}
+<h1>Resultados da prospecção</h1>
+
+<section class="cartao">
+  <form method="get" action="/resultados" class="acao-linha">
+    <label style="font-size:14px">Filtrar por ICP:</label>
+    <select name="icp" style="width:auto">
+      <option value="0">Todos</option>
+      {% for i in icps %}
+      <option value="{{ i.id }}" {% if icp_sel == i.id %}selected{% endif %}>#{{ i.id }} — {{ i.texto_bruto[:60] }}…</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="secundario">Filtrar</button>
+    {% if icp_sel %}
+    <a class="botao secundario" href="/exportar/empresas?icp={{ icp_sel }}&formato=csv">⤓ CSV</a>
+    <a class="botao secundario" href="/exportar/empresas?icp={{ icp_sel }}&formato=json">⤓ JSON</a>
+    {% endif %}
+  </form>
+</section>
+
+<section class="cartao">
+  <table class="tabela">
+    <thead>
+      <tr>
+        <th>Pontuação</th><th>Empresa</th><th>Local</th><th>Site</th><th>Evidências</th><th>Estado</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in empresas %}
+      <tr>
+        <td><strong class="nota">{{ '%.0f'|format(e.pontuacao or 0) }}</strong></td>
+        <td>
+          <strong>{{ e.nome }}</strong>
+          {% if e.duplicata_de %}<div class="detalhe">duplicata da empresa #{{ e.duplicata_de }}</div>{% endif %}
+        </td>
+        <td class="detalhe">{{ (e.localizacao or '—')[:60] }}</td>
+        <td class="detalhe">
+          {% if e.site %}<a href="{{ e.site }}" target="_blank" rel="noopener">{{ e.dominio or e.site[:40] }}</a>{% else %}—{% endif %}
+        </td>
+        <td class="detalhe">{{ e.n_evidencias }}</td>
+        <td><span class="rotulo {{ e.estado }}">{{ e.estado }}</span></td>
+        <td><a class="botao secundario" href="/empresa/{{ e.id }}">Detalhes</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="detalhe">Nenhuma empresa encontrada para este filtro.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

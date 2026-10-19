@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block titulo %}Erro — {{ titulo }}{% endblock %}
+{% block conteudo %}
+<h1>Não foi possível concluir</h1>
+<div class="erro-caixa">{{ mensagem }}</div>
+<a class="botao secundario" href="/">← Voltar ao painel</a>
+{% endblock %}

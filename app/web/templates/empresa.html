@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block titulo %}{{ empresa.nome }} — {{ titulo }}{% endblock %}
+{% block conteudo %}
+<h1>{{ empresa.nome }}</h1>
+
+<div class="grid2">
+  <section class="cartao">
+    <h2>Ficha</h2>
+    <div class="linhas">
+      <div class="linha"><span class="detalhe">Site</span><span>{% if empresa.site %}<a href="{{ empresa.site }}" target="_blank" rel="noopener">{{ empresa.site }}</a>{% else %}<em>ausente nas fontes consultadas</em>{% endif %}</span></div>
+      <div class="linha"><span class="detalhe">Segmento (fonte)</span><span>{{ empresa.segmento or '—' }}</span></div>
+      <div class="linha"><span class="detalhe">Localização</span><span>{{ empresa.localizacao or '—' }}</span></div>
+      <div class="linha"><span class="detalhe">Coletado em</span><span>{{ empresa.coletado_em }}</span></div>
+      <div class="linha"><span class="detalhe">Integridade (SHA-256)</span><span class="hash">{{ empresa.hash_conteudo or '—' }}</span></div>
+      <div class="linha"><span class="detalhe">Estado</span><span class="rotulo {{ empresa.estado }}">{{ empresa.estado }}</span></div>
+    </div>
+    <h2 style="margin-top:16px">Fontes consultadas</h2>
+    <ul style="margin:0;padding-left:18px;font-size:13px">
+      {% for f in fontes %}
+      <li><a href="{{ f.url }}" target="_blank" rel="noopener">{{ f.url }}</a> — {{ f.descricao }} <em>({{ f.data_coleta }})</em></li>
+      {% endfor %}
+    </ul>
+    <form action="/empresa/{{ empresa.id }}/descartar" method="post" style="margin-top:14px"
+          onsubmit="return confirm('Descartar esta empresa da lista?')">
+      <button type="submit" class="secundario">Descartar empresa</button>
+    </form>
+  </section>
+
+  <section class="cartao">
+    <h2>Pontuação de aderência ao ICP{% if icp %} #{{ icp.id }}{% endif %}</h2>
+    <div class="acao-linha" style="margin-bottom:8px">
+      <span class="nota">{{ '%.1f'|format(empresa.pontuacao or 0) }} / 100</span>
+      <span class="detalhe">fatos ⇒ peso cheio · inferências ⇒ meio peso · ausente ⇒ zero</span>
+    </div>
+    {% for c in pontuacao.por_criterio or [] %}
+    <div class="detalhe-criterio">
+      <div class="cabecalho">
+        <div><strong>{{ c.termo }}</strong> <span class="detalhe">({{ c.tipo }} · peso {{ c.peso }})</span></div>
+        <span class="selo {{ c.status }}">{{ {'atendido':'atendido (fato corroborado)','parcial':'parcial (só fonte de descoberta)','inferido':'inferido','ausente':'não encontrado'}[c.status] }}</span>
+      </div>
+      {% for e in c.evidencias %}
+      <div class="evidencia">
+        <blockquote>“{{ e.trecho }}”</blockquote>
+        <div class="fonte">FATO · <a href="{{ e.url }}" target="_blank" rel="noopener">{{ e.url }}</a> · coletado em {{ e.data_coleta }}</div>
+      </div>
+      {% endfor %}
+      {% for i in c.inferencias %}
+      <div class="evidencia" style="border-left-color:var(--alerta)">
+        <div>{{ i.detalhe }}</div>
+        <div class="fonte">INFERÊNCIA · {% if i.fonte %}<a href="{{ i.fonte }}" target="_blank" rel="noopener">{{ i.fonte }}</a>{% endif %}</div>
+      </div>
+      {% endfor %}
+      {% if not c.evidencias and not c.inferencias %}
+      <div class="detalhe" style="color:var(--suave);font-size:13px">Nenhuma evidência coletada para este critério (informação ausente — não significa negativa).</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </section>
+</div>
+
+<section class="cartao" id="rascunho">
+  <h2>Rascunho de abordagem comercial</h2>
+  {% if rascunho %}
+  <form action="/empresa/{{ empresa.id }}/rascunho/salvar" method="post">
+    <textarea name="conteudo" style="min-height:220px">{{ rascunho.conteudo }}</textarea>
+    <div class="acao-linha" style="margin-top:8px">
+      <button type="submit" class="secundario">Salvar edições</button>
+    </div>
+  </form>
+  <hr style="border:none;border-top:1px dashed var(--borda);margin:16px 0">
+  <form action="/empresa/{{ empresa.id }}/solicitar_envio" method="post" class="acao-linha">
+    <label style="font-size:14px">E-mail do destinatário (opcional)</label>
+    <input type="text" name="destinatario" value="" placeholder="contato@empresa.com.br" style="max-width:280px">
+    <button type="submit">Aprovar e criar rascunho no Mail.app →</button>
+  </form>
+  <p class="detalhe" style="color:var(--suave);font-size:13px">
+    Isso cria uma <strong>aprovação pendente</strong> com o texto exato (SHA-256). Só depois do seu
+    clique em “Aprovar” um <strong>rascunho</strong> será criado no Apple Mail — nada é enviado automaticamente.
+  </p>
+  <div class="dica" style="margin-top:6px">
+    <strong>Envio real (opcional):</strong> para o e-mail SAIR da sua caixa, use o formulário abaixo.
+    A aprovação continua obrigatória e vinculada ao conteúdo exato — leia tudo antes de aprovar.
+  </div>
+  <form action="/empresa/{{ empresa.id }}/solicitar_envio_real" method="post" class="acao-linha" style="margin-top:8px"
+        onsubmit="return confirm('Vai ser criada uma aprovação para ENVIAR este e-mail de verdade. Continuar?')">
+    <label style="font-size:14px">Destinatário (obrigatório)</label>
+    <input type="text" name="destinatario" required placeholder="contato@empresa.com.br" style="max-width:280px">
+    <button type="submit" class="perigo">✉ Enviar de verdade (com aprovação) →</button>
+  </form>
+  {% else %}
+  <p class="detalhe" style="color:var(--suave)">Ainda sem rascunho. Gere um usando apenas as evidências coletadas:</p>
+  <form action="/empresa/{{ empresa.id }}/rascunho/gerar" method="post">
+    <button type="submit">✎ Gerar rascunho a partir das evidências</button>
+  </form>
+  {% endif %}
+</section>
+{% endblock %}

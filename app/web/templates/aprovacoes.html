@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block titulo %}Aprovações — {{ titulo }}{% endblock %}
+{% block conteudo %}
+<h1>Aprovações pendentes</h1>
+
+{% if not pendentes %}
+<section class="cartao sutil">
+  <p class="detalhe" style="margin:0;color:var(--suave)">
+    Nenhuma aprovação pendente. Toda ação externa (enviar mensagem, criar nota, publicar…) aparece aqui
+    antes de ser executada, com o conteúdo exato e o hash de integridade.
+  </p>
+</section>
+{% endif %}
+
+{% macro rotulo_acao(tipo) -%}
+{{ {'criar_nota_notes': 'Criar nota no Apple Notes',
+    'criar_rascunho_mail': 'Criar rascunho no Apple Mail (não envia)',
+    'enviar_email_mail': 'ENVIAR e-mail de verdade pelo Apple Mail'}.get(tipo, tipo) }}
+{%- endmacro %}
+{% for a in pendentes %}
+<section class="cartao">
+  <div class="acao-linha" style="justify-content:space-between">
+    <h2 style="margin:0">#{{ a.id }} · {{ rotulo_acao(a.tipo_acao) }}</h2>
+    <span class="rotulo pendente">pendente</span>
+  </div>
+  <p style="margin:10px 0">{{ a.resumo }}</p>
+  <pre>{{ a.conteudo }}</pre>
+  <p class="hash">SHA-256 do conteúdo exato: {{ a.conteudo_sha256 }} · solicitada em {{ a.criado_em }}</p>
+  <form action="/aprovacoes/{{ a.id }}/decidir" method="post" class="acao-linha"
+        onsubmit="return confirm('Confirmar decisão? A execução re-verifica o hash do conteúdo acima.')">
+    <button type="submit" name="acao" value="aprovar">✓ Aprovar e executar</button>
+    <button type="submit" name="acao" value="negar" class="secundario">✕ Negar</button>
+  </form>
+</section>
+{% endfor %}
+
+<section class="cartao">
+  <h2>Decisões recentes</h2>
+  <table class="tabela">
+    <thead><tr><th>#</th><th>Ação</th><th>Estado</th><th>Hash</th><th>Solicitada</th><th>Decidida</th></tr></thead>
+    <tbody>
+      {% for a in decididas %}
+      <tr>
+        <td>{{ a.id }}</td>
+        <td>{{ a.tipo_acao }}</td>
+        <td><span class="rotulo {{ 'concluida' if a.estado == 'executada' else ('falha' if a.estado == 'negada' else '') }}">{{ a.estado }}</span></td>
+        <td class="hash">{{ a.conteudo_sha256[:16] }}…</td>
+        <td class="detalhe">{{ a.criado_em }}</td>
+        <td class="detalhe">{{ a.decidida_em or '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="detalhe">Nenhuma decisão ainda.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

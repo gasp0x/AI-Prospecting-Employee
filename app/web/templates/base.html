@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block titulo %}{{ titulo }}{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div class="marca">
+    <strong>AI Prospecting Employee</strong>
+    <span class="slogan">funcionário de IA para prospecção — execução local</span>
+  </div>
+  <nav>
+    <a href="/" {% if request.url.path == '/' %}class="ativo"{% endif %}>Painel</a>
+    <a href="/resultados" {% if request.url.path.startswith('/resultados') or request.url.path.startswith('/empresa') %}class="ativo"{% endif %}>Resultados</a>
+    <a href="/aprovacoes" {% if request.url.path.startswith('/aprovacoes') %}class="ativo"{% endif %}>Aprovações</a>
+    <a href="/extensao" {% if request.url.path.startswith('/extensao') %}class="ativo"{% endif %}>Navegador</a>
+    <a href="/exportar" {% if request.url.path.startswith('/exportar') %}class="ativo"{% endif %}>Exportar</a>
+    <a href="/auditoria" {% if request.url.path.startswith('/auditoria') %}class="ativo"{% endif %}>Auditoria</a>
+  </nav>
+  <div id="status-extensao" class="status {{ 'conectado' if extensao.conectado else 'desconectado' }}"
+       title="Extensão do navegador conectada via WebSocket local">
+    {{ '⬤ navegador conectado' if extensao.conectado else '○ navegador desconectado' }}
+  </div>
+</header>
+<main>
+{% block conteudo %}{% endblock %}
+</main>
+<footer>
+  <span>Execução 100% local · evidências com fonte e data · ações externas só com aprovação explícita</span>
+</footer>
+<script src="/static/app.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

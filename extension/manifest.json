@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "AI Prospecting Employee — Ponte Local",
+  "version": "0.1.0",
+  "description": "Ponte autorizada entre o AI Prospecting Employee (execução local) e o navegador do usuário. Só age com clique explícito no popup. Nunca lê cookies nem senhas.",
+  "permissions": ["tabs", "scripting", "alarms", "storage"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "AI Prospecting Employee — ponte local"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "minimum_chrome_version": "116"
+}

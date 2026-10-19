@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block titulo %}ICP #{{ icp.id }} — {{ titulo }}{% endblock %}
+{% block conteudo %}
+<h1>Perfil de cliente ideal #{{ icp.id }}</h1>
+
+<section class="cartao">
+  <h2>Texto original</h2>
+  <p style="white-space:pre-wrap;margin:0">{{ icp.texto_bruto }}</p>
+  <p class="detalhe" style="color:var(--suave);font-size:13px">
+    Critérios extraídos em {{ icp.criado_em }} · origem: {{ 'revisado por você' if icp.origem == 'revisado' else 'interpretação automática' }}
+  </p>
+</section>
+
+{% if alertas %}
+<div class="dica">
+  <strong>Atenção:</strong>
+  <ul style="margin:6px 0 0;padding-left:20px">
+    {% for a in alertas %}<li>{{ a }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<section class="cartao">
+  <h2>Critérios de pesquisa (revisáveis)</h2>
+  <p class="detalhe" style="color:var(--suave);font-size:13px;margin-top:0">
+    Peso maior = mais relevante na pontuação. Segmento 3,0 · Localização 2,0 · Palavra-chave 1,5 · Porte 1,0 (sugestões).
+  </p>
+  <form action="/icp/{{ icp.id }}/criterios" method="post">
+    {% for c in criterios %}
+    <div class="criterio-linha" style="margin-bottom:8px">
+      <select name="tipo">
+        {% for t, r in [('segmento','Segmento'), ('localizacao','Localização'), ('palavra_chave','Palavra-chave'), ('porte','Porte')] %}
+        <option value="{{ t }}" {% if c.tipo == t %}selected{% endif %}>{{ r }}</option>
+        {% endfor %}
+      </select>
+      <input type="text" name="termo" value="{{ c.termo }}" required>
+      <input type="number" name="peso" value="{{ c.peso }}" min="0.5" max="5" step="0.5">
+      <span title="ID {{ c.id }}" class="detalhe">#{{ c.id }}</span>
+    </div>
+    {% endfor %}
+    <div class="criterio-linha" style="margin-bottom:8px;opacity:.7">
+      <select name="tipo">
+        {% for t, r in [('segmento','Segmento'), ('localizacao','Localização'), ('palavra_chave','Palavra-chave'), ('porte','Porte')] %}
+        <option value="{{ t }}">{{ r }}</option>
+        {% endfor %}
+      </select>
+      <input type="text" name="termo" placeholder="novo critério (opcional)">
+      <input type="number" name="peso" placeholder="1.0" min="0.5" max="5" step="0.5">
+      <span></span>
+    </div>
+    <label style="font-size:14px;margin-top:6px">Proposta de valor usada na redação das mensagens</label>
+    <textarea name="proposta_valor" style="min-height:70px">{{ icp.proposta_valor }}</textarea>
+    <label style="font-size:14px">Assinatura das mensagens</label>
+    <input type="text" name="assinatura" value="{{ icp.assinatura }}" placeholder="Ex.: Arthur — Consultoria X">
+    <div class="acao-linha">
+      <button type="submit" class="secundario">Salvar critérios</button>
+    </div>
+  </form>
+</section>
+
+<section class="cartao">
+  <h2>Iniciar pesquisa</h2>
+  <p class="detalhe" style="color:var(--suave);font-size:13px;margin-top:0">
+    Fontes: OpenStreetMap/Nominatim (público), sites oficiais das empresas (respeitando robots.txt) e busca web quando disponível.
+    Bloqueios e CAPTCHAs interrompem a coleta com explicação. Você pode cancelar a qualquer momento.
+  </p>
+  <form action="/icp/{{ icp.id }}/pesquisa" method="post" class="acao-linha">
+    <label style="font-size:14px">Máx. de empresas a investigar</label>
+    <input type="number" name="maximo" value="12" min="3" max="40" style="width:100px">
+    <button type="submit">▶ Iniciar pesquisa</button>
+  </form>
+</section>
+
+<section class="cartao">
+  <h2>Histórico de pesquisas deste ICP</h2>
+  <div class="linhas">
+    {% for t in tarefas %}
+    <div class="linha">
+      <div>
+        <div class="principal">Tarefa #{{ t.id }} · {{ t.tipo }}</div>
+        <div class="detalhe">{{ t.criado_em }} · progresso {{ t.progresso }}%</div>
+      </div>
+      <div class="acao-linha">
+        <span class="rotulo {{ t.estado }}">{{ t.estado | rotulo_estado }}</span>
+        <a class="botao secundario" href="/tarefa/{{ t.id }}">Abrir</a>
+      </div>
+    </div>
+    {% else %}
+    <p class="detalhe" style="color:var(--suave)">Nenhuma pesquisa executada para este ICP.</p>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<h1>Painel</h1>
+
+<div class="grid2">
+  <section class="cartao">
+    <h2>1. Descreva seu perfil de cliente ideal (ICP)</h2>
+    <form action="/icp/novo" method="post">
+      <textarea name="texto" required
+        placeholder="Ex.: Procuro clínicas de fisioterapia em Campinas (SP), com site próprio, que atendam convênios e queiram aumentar a agenda de pacientes."></textarea>
+      <button type="submit">Interpretar ICP →</button>
+      <span class="dica" style="border:none;background:none;padding:0">
+        A interpretação é determinística e você revisa os critérios antes de pesquisar.
+      </span>
+    </form>
+  </section>
+
+  <section class="cartao">
+    <h2>Ação local no macOS (demonstração)</h2>
+    <p class="detalhe" style="color:var(--suave);font-size:13px;margin-top:0">
+      Grava uma nota no <strong>Apple Notes</strong> do seu Mac. Antes de executar, pede sua
+      aprovação com o conteúdo exato (hash SHA-256). A primeira execução mostra o diálogo de
+      permissão do macOS (Automação).
+    </p>
+    <form action="/acao-local/notes" method="post">
+      <input type="text" name="titulo" value="Resumo — AI Prospecting Employee" required>
+      <textarea name="corpo">Nota de teste criada pelo AI Prospecting Employee.
+- Execução local, com aprovação explícita do usuário.
+- Histórico e auditoria registrados no banco local.</textarea>
+      <button type="submit" class="secundario">Solicitar criação de nota (com aprovação)</button>
+    </form>
+  </section>
+</div>
+
+<section class="cartao">
+  <h2>Tarefas recentes</h2>
+  <div class="linhas">
+    {% for t in tarefas %}
+    <div class="linha">
+      <div>
+        <div class="principal">
+          #{{ t.id }} · {{ {'pesquisa': 'Pesquisa de prospecção', 'executar:criar_nota_notes': 'Ação local: nota no Notes', 'executar:criar_rascunho_mail': 'Ação aprovada: rascunho no Mail'}.get(t.tipo, t.tipo) }}
+        </div>
+        <div class="detalhe">criada em {{ t.criado_em }} · progresso {{ t.progresso }}%</div>
+      </div>
+      <div class="acao-linha">
+        <span class="rotulo {{ t.estado }}">{{ t.estado | rotulo_estado }}</span>
+        <a class="botao secundario" href="/tarefa/{{ t.id }}">Abrir</a>
+      </div>
+    </div>
+    {% else %}
+    <p class="detalhe" style="color:var(--suave)">Nenhuma tarefa ainda. Comece pelo ICP acima.</p>
+    {% endfor %}
+  </div>
+</section>
+
+<div class="grid2">
+  <section class="cartao">
+    <h2>ICPs cadastrados</h2>
+    <div class="linhas">
+      {% for i in icps %}
+      <div class="linha">
+        <div>
+          <div class="principal">{{ i.texto_bruto[:90] }}{% if i.texto_bruto|length > 90 %}…{% endif %}</div>
+          <div class="detalhe">critérios {{ i.n_criterios }} · {{ i.origem }}</div>
+        </div>
+        <div class="acao-linha">
+          <a class="botao secundario" href="/icp/{{ i.id }}">Revisar</a>
+          <a class="botao secundario" href="/resultados?icp={{ i.id }}">Resultados</a>
+        </div>
+      </div>
+      {% else %}
+      <p class="detalhe" style="color:var(--suave)">Nenhum ICP cadastrado.</p>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="cartao">
+    <h2>Melhores empresas (todos os ICPs)</h2>
+    <div class="linhas">
+      {% for e in empresas %}
+      <div class="linha">
+        <div>
+          <div class="principal">{{ e.nome }}</div>
+          <div class="detalhe">{{ e.localizacao or e.dominio or '—' }}</div>
+        </div>
+        <div class="acao-linha">
+          <strong class="nota">{{ '%.0f'|format(e.pontuacao or 0) }}</strong>
+          <a class="botao secundario" href="/empresa/{{ e.id }}">Detalhes</a>
+        </div>
+      </div>
+      {% else %}
+      <p class="detalhe" style="color:var(--suave)">Nenhuma empresa coletada ainda.</p>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+{% endblock %}

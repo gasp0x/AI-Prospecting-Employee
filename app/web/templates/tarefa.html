@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block titulo %}Tarefa #{{ tarefa.id }} — {{ titulo }}{% endblock %}
+{% block conteudo %}
+<h1>Tarefa #{{ tarefa.id }} — {{ {'pesquisa': 'Pesquisa de prospecção'}.get(tarefa.tipo, tarefa.tipo) }}</h1>
+
+<section class="cartao" data-tarefa-id="{{ tarefa.id }}">
+  <div class="acao-linha" style="justify-content:space-between;margin-bottom:10px">
+    <div class="acao-linha">
+      <span id="badge-estado" class="rotulo {{ tarefa.estado }}">{{ tarefa.estado | rotulo_estado }}</span>
+      <span id="rotulo-progresso">{{ tarefa.progresso }}%</span>
+    </div>
+    {% if tarefa.estado in ['pendente', 'em_execucao'] %}
+    <form action="/tarefa/{{ tarefa.id }}/cancelar" method="post"
+          onsubmit="return confirm('Cancelar esta tarefa? O progresso até aqui é mantido.')">
+      <button type="submit" class="perigo">✕ Cancelar tarefa</button>
+    </form>
+    {% endif %}
+  </div>
+  <div class="barra-progresso"><div id="barra-progresso" style="width: {{ tarefa.progresso }}%"></div></div>
+
+  {% if tarefa.erro %}
+  <div class="erro-caixa" style="margin-top:12px"><strong>Erro:</strong> {{ tarefa.erro }}</div>
+  {% endif %}
+
+  {% if tarefa.estado == 'concluida' and resultado %}
+  <div class="linhas" style="margin-top:14px">
+    <div class="linha">
+      <div class="principal">Empresas registradas: {{ resultado.empresas_criadas }} · qualificadas (≥40 pts): {{ resultado.qualificadas }}</div>
+      <div class="detalhe">bloqueios de coleta: {{ resultado.bloqueios_site }} · erros: {{ resultado.erros_site }}</div>
+      <a class="botao" href="/resultados?icp={{ resultado.icp_id }}">Ver resultados →</a>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if tarefa.estado == 'concluida' and tarefa.tipo.startswith('executar:') %}
+  <div class="dica" style="margin-top:14px">
+    Ação aprovada executada. Resultado: {{ resultado }} — veja também o app local (Notes/Mail).
+  </div>
+  {% endif %}
+</section>
+
+<section class="cartao">
+  <h2>Histórico de execução</h2>
+  <ul id="lista-eventos" class="eventos">
+    {% for e in eventos %}
+    <li class="{{ e.nivel }}">
+      <span class="ts">{{ e.ts }}</span>
+      <span>{% if e.etapa %}[{{ e.etapa }}] {% endif %}{{ e.mensagem }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>document.body.dataset.tarefaId = "{{ tarefa.id }}";</script>
+{% endblock %}

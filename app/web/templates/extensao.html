@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block titulo %}Navegador — {{ titulo }}{% endblock %}
+{% block conteudo %}
+<h1>Navegador do usuário (extensão autorizada)</h1>
+
+<section class="cartao">
+  <div class="acao-linha" style="justify-content:space-between">
+    <div>
+      <h2 style="margin:0">Status: {{ 'conectado ✓' if extensao.conectado else 'desconectado' }}</h2>
+      <p class="detalhe" style="color:var(--suave);margin:6px 0 0">
+        {% if extensao.conectado %}
+        Navegador: {{ extensao.navegador or '—' }} · conectado em {{ extensao.conectado_em }}
+        {% else %}
+        A extensão se conecta em <code>ws://127.0.0.1:{{ porta }}/ws/extensao</code> quando você clicar no ícone dela.
+        {% endif %}
+      </p>
+    </div>
+  </div>
+</section>
+
+<section class="cartao">
+  <h2>Como instalar a extensão (Chrome, Edge ou Brave neste Mac)</h2>
+  <ol style="margin:0;padding-left:20px;font-size:14px;line-height:1.7">
+    <li>Abra <code>chrome://extensions</code> (ou <code>edge://extensions</code>).</li>
+    <li>Ative o <strong>Modo do desenvolvedor</strong> (canto superior direito).</li>
+    <li>Clique em <strong>Carregar sem compactação</strong> e escolha a pasta <code>extension/</code> deste projeto.</li>
+    <li>Clique no ícone da extensão na barra e depois em <strong>Conectar</strong>.</li>
+  </ol>
+  <div class="dica" style="margin-top:12px">
+    <strong>Por que a extensão é necessária:</strong> algumas páginas exigem login ou bloqueiam coleta
+    automatizada. Com a extensão, o agente usa a aba <em>já autenticada</em> do SEU navegador —
+    somente quando você autorizar no popup, e lendo apenas o texto visível da página.
+    <strong>Cookies e senhas nunca são lidos nem exportados.</strong>
+  </div>
+  {% if token_configurado %}
+  <div class="dica" style="margin-top:10px">
+    Token definido em <code>.env</code> (AIPE_TOKEN_EXTENSAO): informe-o no campo do popup da extensão antes de conectar.
+  </div>
+  {% endif %}
+</section>
+
+<section class="cartao">
+  <h2>Pedir leitura da aba ativa (teste do canal)</h2>
+  <p class="detalhe" style="color:var(--suave);font-size:13px;margin-top:0">
+    Cria um pedido que aparece no popup da extensão. Só é executado se você clicar em “Permitir” lá.
+  </p>
+  <form action="/extensao/ler-aba" method="post" class="acao-linha">
+    <input type="text" name="justificativa" placeholder="Por que o agente precisa ler a aba (ex.: coletar conteúdo de resultado de busca)">
+    <button type="submit" class="secundario">Solicitar leitura</button>
+  </form>
+</section>
+
+<section class="cartao">
+  <h2>Pedidos recentes</h2>
+  <table class="tabela">
+    <thead><tr><th>#</th><th>Tipo</th><th>Estado</th><th>Criado</th><th>Decidido</th></tr></thead>
+    <tbody>
+      {% for p in pedidos %}
+      <tr>
+        <td>{{ p.id }}</td>
+        <td>{{ {'ler_aba': 'ler aba ativa', 'abrir_url': 'abrir URL'}.get(p.tipo, p.tipo) }}</td>
+        <td>
+          <span class="rotulo {{ p.estado }}" data-pedido-estado="{{ p.id }}">
+            {{ {'pendente': 'pendente', 'atendida': 'atendida', 'negada': 'negada', 'expirada': 'expirada'}.get(p.estado, p.estado) }}
+          </span>
+        </td>
+        <td class="detalhe">{{ p.criado_em }}</td>
+        <td class="detalhe">{{ p.decidida_em or '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="detalhe">Nenhum pedido ainda.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>document.body.dataset.pagina = "extensao";</script>
+{% endblock %}
