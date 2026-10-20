@@ -23,8 +23,8 @@ class _Resposta:
             raise httpx.HTTPStatusError("erro", request=None, response=None)
 
 
-def test_busca_web_detecta_bloqueio_antibot(banco_tmp, monkeypatch):
-    # fixture REAL: página de anomalia capturada neste ambiente (HTTP 202)
+def test_busca_web_todos_os_motores_bloqueados(banco_tmp, monkeypatch):
+    # fixture REAL: página de anomalia capturada neste ambiente (HTTP 202, DDG)
     pagina_anomalia = (
         "<html><body>If this error persists, <a href='/'>anomaly</a> detection "
         "was triggered. Please solve a captcha to continue.</body></html>"
@@ -33,9 +33,37 @@ def test_busca_web_detecta_bloqueio_antibot(banco_tmp, monkeypatch):
     def fake_post(*args, **kwargs):
         return _Resposta(status_code=202, texto=pagina_anomalia)
 
+    def fake_get(*args, **kwargs):
+        return _Resposta(status_code=403, texto="captcha challenge")
+
     monkeypatch.setattr(websearch.httpx, "post", fake_post)
+    monkeypatch.setattr(websearch.httpx, "get", fake_get)
     with pytest.raises(websearch.BuscaBloqueada):
         websearch.buscar("qualquer consulta")
+
+
+def test_ddg_bloqueado_cai_para_brave(banco_tmp, monkeypatch):
+    """NordVPN ativa: DDG bloqueia (202), Brave responde com resultados orgânicos."""
+    pagina_anomalia = "<html>anomaly detection captcha</html>"
+    pagina_brave = (
+        '<html><main><section id="mixed-main">'
+        '<div class="snippet" data-type="web"><a href="https://clinica.com.br/">r1</a></div>'
+        '<div class="snippet" data-type="ad"><a href="https://anuncio.com/">ad</a></div>'
+        '<div class="snippet" data-type="web"><a href="https://www.brave.com/interno">interno</a></div>'
+        '<div class="snippet" data-type="web"><a href="https://outra.com.br/">r2</a></div>'
+        "</section></main></html>"
+    )
+
+    def fake_post(*args, **kwargs):
+        return _Resposta(status_code=202, texto=pagina_anomalia)
+
+    def fake_get(*args, **kwargs):
+        return _Resposta(status_code=200, texto=pagina_brave)
+
+    monkeypatch.setattr(websearch.httpx, "post", fake_post)
+    monkeypatch.setattr(websearch.httpx, "get", fake_get)
+    urls = websearch.buscar("consulta", limite=5)
+    assert urls == ["https://clinica.com.br/", "https://outra.com.br/"]
 
 
 def test_busca_web_extrai_links_organicos_e_descarta_anuncios(banco_tmp, monkeypatch):

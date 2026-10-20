@@ -109,6 +109,15 @@ CREATE TABLE IF NOT EXISTS pedido_extensao (
   decidida_em TEXT
 );
 
+CREATE TABLE IF NOT EXISTS chat_msg (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  papel TEXT NOT NULL,
+  texto TEXT NOT NULL,
+  acoes_json TEXT,
+  tarefa_id INTEGER,
+  ts TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS auditoria (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ts TEXT NOT NULL,

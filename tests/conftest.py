@@ -10,13 +10,22 @@ from app.config import settings
 
 @pytest.fixture()
 def banco_tmp(tmp_path, monkeypatch):
-    """Aponta o banco do app para um arquivo temporário por teste."""
+    """Aponta o banco do app para um arquivo temporário por teste.
+
+    Antes de trocar o banco, espera as threads de tarefas do teste anterior
+    terminarem (elas escrevem no banco lido a cada operação — trocar com
+    threads vivas causaria vazamento entre testes).
+    """
+    from app.engine.tasks import gerenciador_tarefas
+
+    gerenciador_tarefas.aguardar_todas(timeout_s=10)
     caminho = tmp_path / "teste.sqlite3"
     object.__setattr__(settings, "caminho_banco", caminho)
     from app import db
 
     db.init_schema(caminho)
     yield caminho
+    gerenciador_tarefas.aguardar_todas(timeout_s=10)
     object.__setattr__(settings, "caminho_banco", tmp_path / "descartado.sqlite3")
 
 

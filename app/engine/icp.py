@@ -150,10 +150,17 @@ def extrair_criterios(texto_icp: str) -> dict:
             termo = m.group(1).strip()
             adicionar("segmento", termo, 3.0, consulta=termo)
         else:
-            alertas.append(
-                "Não identifiquei um segmento de negócio no texto. "
-                "Revise os critérios abaixo — sem um segmento, a busca fica muito ampla."
-            )
+            # fallback 2: substantivo antes de "em" ("floriculturas em Porto Alegre")
+            m2 = re.search(r"([\wà-úÀ-Ú]{3,31})\s+em\s+", texto, re.IGNORECASE)
+            if m2:
+                termo = m2.group(1)
+                consulta = termo[:-1] if termo.endswith("s") and len(termo) > 4 else termo
+                adicionar("segmento", termo, 3.0, consulta=consulta)
+            else:
+                alertas.append(
+                    "Não identifiquei um segmento de negócio no texto. "
+                    "Revise os critérios abaixo — sem um segmento, a busca fica muito ampla."
+                )
 
     # --- localização ---
     localizacoes: list[tuple[str, str]] = []  # (exibição, uf)

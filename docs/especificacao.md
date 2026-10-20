@@ -10,6 +10,10 @@ humana — sem inventar dados e sem executar ações externas sem aprovação ex
 
 ## Capacidades
 
+0. **Interface conversacional.** Chat estilo ChatGPT (web) e canal **Telegram** opcional:
+   o usuário dá ordens em lingu natural ("procure X em Y", "status", "rascunho para Z",
+   "aprovar 3") e o funcionário executa e reporta no próprio chat, com o mesmo controle
+   de evidências e aprovações da interface web.
 1. **ICP → critérios revisáveis.** Texto livre em pt-BR vira critérios tipados
    (segmento, localização, porte, palavras-chave) com pesos editáveis na interface.
 2. **Descoberta em fontes autorizadas.** OpenStreetMap/Nominatim (POIs reais, política

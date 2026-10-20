@@ -194,6 +194,17 @@ class TaskManager:
         )
         return True
 
+    def aguardar_todas(self, timeout_s: float = 10.0) -> None:
+        """Bloqueia até todas as threads de tarefas terminarem (útil em testes/desligamento)."""
+        prazo = time.monotonic() + timeout_s
+        while time.monotonic() < prazo:
+            with self._lock:
+                handles = list(self._ativas.values())
+            if not handles:
+                return
+            for handle in handles:
+                handle.thread.join(timeout=0.5)
+
     def contexto(self, tarefa_id: int) -> TaskContext | None:
         handle = self._ativas.get(tarefa_id)
         return handle.contexto if handle else None

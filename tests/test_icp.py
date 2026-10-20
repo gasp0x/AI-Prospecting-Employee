@@ -44,3 +44,12 @@ def test_pesos_padrao_por_tipo():
     pesos = {c["tipo"]: c["peso"] for c in resultado["criterios"]}
     assert pesos["segmento"] == 3.0
     assert pesos["localizacao"] == 2.0
+
+
+def test_segmento_generico_antes_de_em():
+    """'floriculturas em Porto Alegre' → segmento capturado mesmo fora do dicionário."""
+    resultado = extrair_criterios("procure floriculturas em Porto Alegre (RS) com entrega própria")
+    segmentos = [c for c in resultado["criterios"] if c["tipo"] == "segmento"]
+    assert segmentos and segmentos[0]["consulta"] == "floricultura"
+    assert any(c["tipo"] == "localizacao" and "Porto Alegre" in c["termo"] for c in resultado["criterios"])
+    assert not any("segmento" in a.lower() for a in resultado["alertas"])

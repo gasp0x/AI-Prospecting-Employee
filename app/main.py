@@ -24,6 +24,11 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 async def lifespan(_app: FastAPI):
     db.init_schema()
     logging.info("Banco de dados pronto em %s", settings.caminho_banco)
+    if settings.token_telegram:
+        from .adapters.telegram import iniciar_se_configurado
+
+        iniciar_se_configurado()
+        logging.info("Canal Telegram ativo.")
     yield
 
 

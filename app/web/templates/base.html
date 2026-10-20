@@ -13,7 +13,7 @@
     <span class="slogan">funcionário de IA para prospecção — execução local</span>
   </div>
   <nav>
-    <a href="/" {% if request.url.path == '/' %}class="ativo"{% endif %}>Painel</a>
+    <a href="/painel" {% if request.url.path == '/painel' %}class="ativo"{% endif %}>Painel</a>
     <a href="/resultados" {% if request.url.path.startswith('/resultados') or request.url.path.startswith('/empresa') %}class="ativo"{% endif %}>Resultados</a>
     <a href="/aprovacoes" {% if request.url.path.startswith('/aprovacoes') %}class="ativo"{% endif %}>Aprovações</a>
     <a href="/extensao" {% if request.url.path.startswith('/extensao') %}class="ativo"{% endif %}>Navegador</a>

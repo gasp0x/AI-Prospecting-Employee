@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chat — AI Prospecting Employee</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    body { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+    header.chat-topo { display: flex; align-items: center; gap: 14px; padding: 10px 20px; background: var(--cartao); border-bottom: 1px solid var(--borda); }
+    header.chat-topo strong { font-size: 15px; }
+    header.chat-topo a { font-size: 12.5px; color: var(--suave); text-decoration: none; }
+    header.chat-topo a:hover { color: var(--texto); }
+    #conversa { flex: 1; overflow-y: auto; padding: 24px 16px; display: flex; flex-direction: column; gap: 14px; max-width: 860px; width: 100%; margin: 0 auto; }
+    .msg { max-width: 78%; padding: 11px 15px; border-radius: 14px; font-size: 14.5px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+    .msg.usuario { align-self: flex-end; background: var(--info); color: #fff; border-bottom-right-radius: 4px; }
+    .msg.agente { align-self: flex-start; background: var(--cartao); border: 1px solid var(--borda); border-bottom-left-radius: 4px; }
+    .msg.agente strong { color: var(--acao); }
+    .msg .acoes { margin-top: 9px; display: flex; gap: 7px; flex-wrap: wrap; }
+    .msg .acoes a { font-size: 12.5px; background: #eef1f5; border: 1px solid var(--borda); border-radius: 999px; padding: 4px 12px; text-decoration: none; color: var(--texto); }
+    .msg .acoes a:hover { background: #e2e7ee; }
+    .msg .hora { display: block; font-size: 10.5px; opacity: .55; margin-top: 6px; }
+    .digitando { align-self: flex-start; color: var(--suave); font-size: 13px; font-style: italic; padding: 4px 10px; }
+    form#entrada { display: flex; gap: 10px; padding: 14px 16px 18px; max-width: 860px; width: 100%; margin: 0 auto; }
+    form#entrada textarea { flex: 1; min-height: 46px; max-height: 140px; resize: none; border-radius: 12px; }
+    form#entrada button { border-radius: 12px; padding: 0 22px; font-size: 18px; }
+    .sugestoes { max-width: 860px; width: 100%; margin: 0 auto; padding: 10px 16px 0; display: flex; gap: 8px; flex-wrap: wrap; }
+    .sugestoes button { font-size: 12.5px; background: var(--cartao); color: var(--suave); border: 1px solid var(--borda); border-radius: 999px; padding: 6px 13px; cursor: pointer; }
+    .sugestoes button:hover { color: var(--texto); border-color: var(--suave); }
+  </style>
+</head>
+<body>
+<header class="chat-topo">
+  <strong>🤖 Funcionário de Prospecção</strong>
+  <span style="font-size:11.5px;color:var(--suave)">execução local · evidências com fonte · ações só com aprovação</span>
+  <span style="margin-left:auto; display:flex; gap:12px">
+    <a href="/painel">Painel</a><a href="/resultados">Resultados</a><a href="/aprovacoes">Aprovações</a><a href="/extensao">Navegador</a><a href="/exportar">Exportar</a><a href="/auditoria">Auditoria</a>
+  </span>
+</header>
+
+<div id="conversa"></div>
+<div class="sugestoes">
+  <button data-texto="procure clínicas de fisioterapia em Campinas (SP), com site próprio">🔍 procurar clínicas em Campinas</button>
+  <button data-texto="status">status</button>
+  <button data-texto="resultados">resultados</button>
+  <button data-texto="aprovações">aprovações</button>
+  <button data-texto="exportar">exportar</button>
+  <button data-texto="ajuda">ajuda</button>
+</div>
+<form id="entrada">
+  <textarea id="campo" placeholder="Fale com seu funcionário: “procure academias em São Paulo que usem check-in digital”" autofocus></textarea>
+  <button type="submit">➤</button>
+</form>
+
+<script>
+const conversa = document.getElementById("conversa");
+const campo = document.getElementById("campo");
+let ultimoId = 0;
+let enviando = false;
+
+function escapar(t) { const d = document.createElement("div"); d.textContent = t ?? ""; return d.innerHTML; }
+function markdownLeve(t) {
+  return escapar(t)
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>");
+}
+function hora(iso) { try { return new Date(iso + "Z").toLocaleTimeString("pt-BR", {hour: "2-digit", minute: "2-digit"}); } catch { return ""; } }
+
+function render(m) {
+  const div = document.createElement("div");
+  div.className = "msg " + (m.papel === "usuario" ? "usuario" : "agente");
+  let html = markdownLeve(m.texto);
+  if (m.acoes && m.acoes.length) {
+    html += '<div class="acoes">' + m.acoes.map(a => `<a href="${a.url}">${escapar(a.rotulo)}</a>`).join("") + "</div>";
+  }
+  html += `<span class="hora">${hora(m.ts)}</span>`;
+  div.innerHTML = html;
+  conversa.appendChild(div);
+  conversa.scrollTop = conversa.scrollHeight;
+}
+
+async function puxar() {
+  try {
+    const r = await fetch(`/api/chat/mensagens?depois=${ultimoId}`);
+    const d = await r.json();
+    for (const m of d.mensagens) { render(m); ultimoId = m.id; }
+  } catch { /* tenta de novo */ }
+}
+
+async function enviar(texto) {
+  if (!texto.trim() || enviando) return;
+  enviando = true;
+  render({ papel: "usuario", texto, ts: new Date().toISOString() });
+  campo.value = "";
+  const indicador = document.createElement("div");
+  indicador.className = "digitando";
+  indicador.textContent = "funcionário trabalhando…";
+  conversa.appendChild(indicador);
+  conversa.scrollTop = conversa.scrollHeight;
+  try {
+    const r = await fetch("/api/chat", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ texto }) });
+    const d = await r.json();
+    indicador.remove();
+    for (const resp of d.respostas || []) render({ papel: "agente", texto: resp.texto, acoes: resp.acoes, ts: new Date().toISOString() });
+  } catch {
+    indicador.textContent = "falha de conexão — tente de novo";
+  }
+  enviando = false;
+  campo.focus();
+}
+
+document.querySelector("form#entrada").addEventListener("submit", (e) => { e.preventDefault(); enviar(campo.value); });
+campo.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviar(campo.value); }
+});
+document.querySelectorAll(".sugestoes button").forEach((b) => b.addEventListener("click", () => enviar(b.dataset.texto)));
+
+puxar();
+setInterval(puxar, 2000);
+</script>
+</body>
+</html>

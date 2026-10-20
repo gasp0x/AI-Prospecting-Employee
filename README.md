@@ -26,6 +26,9 @@ externas com sua aprovação explícita**, vinculada ao conteúdo exato (hash SH
 | Ação real em app do macOS (nota no Apple Notes; rascunho no Apple Mail) | ✅ funcionando |
 | Tarefa: estados, progresso, tempo limite, tentativas, cancelamento e histórico | ✅ funcionando (cancelamento ao vivo testado) |
 | Exportação CSV/JSON e registro de auditoria | ✅ funcionando |
+| **Chat** (estilo ChatGPT) como interface principal, com histórico | ✅ funcionando |
+| **Canal Telegram** (converse pelo celular; modelo OpenClaw) | ✅ funcionando — opcional, ativa com `AIPE_TELEGRAM_TOKEN` |
+| Busca web multi-motor (DuckDuckGo → Brave) com bloqueio honesto | ✅ implementado; funciona quando o IP não está bloqueado por anti-bot |
 | Envio real de e-mail pelo Mail, sempre com aprovação hash-vinculada | ✅ funcionando (opcional; o padrão continua sendo só rascunho) |
 | Resultados persistidos e recuperáveis após reinício | ✅ funcionando |
 | Navegador do usuário via extensão autorizada (aba autenticada) | ⚠️ implementado e testado; carregamento no Chrome (Stable 154) é manual — `chrome://extensions` → Modo do desenvolvedor → Carregar sem compactação → pasta `extension/` |
@@ -58,14 +61,28 @@ cp .env.example .env            # opcional: ajuste porta, assinatura, token da e
 Abra **http://127.0.0.1:8734** — tudo roda na sua máquina; nenhum dado sai dela,
 exceto as requisições HTTP públicas aos sites pesquisados (com seu User-Agent).
 
-### Fluxo de uso
+### Fluxo de uso — converse com o funcionário (http://127.0.0.1:8734)
 
-1. **Painel** → descreva o ICP (ex.: “Procuro clínicas de fisioterapia em Campinas (SP), com site próprio, que atendam convênios.”) → *Interpretar ICP*.
-2. **Revisão do ICP** → ajuste termos, pesos e a proposta de valor → *Iniciar pesquisa*.
-3. **Acompanhe a tarefa** → progresso, eventos em tempo real, cancelamento a qualquer momento.
-4. **Resultados** → lista ordenada por pontuação; abra uma empresa para ver ficha, fontes, evidências e a explicação da pontuação.
-5. **Rascunho** → gere a mensagem a partir das evidências, edite, e solicite a criação do rascunho no Mail.app → **aprovar** em *Aprovações* (com hash do conteúdo exato).
-6. **Exportar** → CSV (Excel pt-BR) ou JSON completo com fontes e evidências.
+```
+Você: procure clínicas de fisioterapia em Campinas (SP), com site próprio, que atendam convênios
+Você: status
+Você: resultados
+Você: rascunho para Clínica Dragão Divino
+Você: aprovar 7        ← cria o rascunho no Mail (conteúdo exato, hash-verificado)
+Você: exportar
+```
+
+O agente inicia a pesquisa sozinho e te avisa no chat quando terminar, com as melhores
+empresas e pontuações. Os comandos de gerenciamento continuam disponíveis: **Painel**
+(revisão de critérios com pesos), **Resultados** (ficha, fontes, evidências por empresa),
+**Aprovações** (conteúdo exato + SHA-256), **Navegador**, **Exportar** e **Auditoria**.
+
+### Telegram (opcional)
+
+1. Crie um bot com o **@BotFather** no Telegram e copie o token.
+2. No `.env`: `AIPE_TELEGRAM_TOKEN=123456:ABC-DEF…`
+3. Reinicie o servidor e fale com o bot pelo celular — mesma conversa, mesmo cérebro,
+   mesmas aprovações hash-vinculadas.
 
 ### Primeira ação no macOS (permissão TCC)
 

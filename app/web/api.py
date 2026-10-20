@@ -6,8 +6,48 @@ from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from ..adapters.browser import ponte_navegador
 from ..config import settings
 from ..db import buscar_um, de_json, listar
+from ..engine import chatbot
 
 api_router = APIRouter()
+
+
+@api_router.post("/api/chat")
+def enviar_chat(corpo: dict):
+    texto = (corpo.get("texto") or "").strip()
+    if not texto:
+        return {"erro": "mensagem vazia"}
+    chatbot.registrar_usuario(texto)
+    respostas = chatbot.responder(texto)
+    return {
+        "respostas": [
+            {
+                "texto": m.texto,
+                "acoes": m.acoes,
+                "tarefa_id": m.tarefa_id,
+                "tipo": m.tipo,
+                "id": chatbot.registrar_agente(m),
+            }
+            for m in respostas
+        ]
+    }
+
+
+@api_router.get("/api/chat/mensagens")
+def mensagens_chat(depois: int = 0):
+    chatbot.puxar_notificacoes()
+    linhas = listar("chat_msg", where="id > ?", parametros=(depois,), ordem="id ASC", limite=100)
+    return {
+        "mensagens": [
+            {
+                "id": l["id"],
+                "papel": l["papel"],
+                "texto": l["texto"],
+                "acoes": de_json(l["acoes_json"], []),
+                "ts": l["ts"],
+            }
+            for l in linhas
+        ]
+    }
 
 
 @api_router.get("/api/tarefa/{tarefa_id}/estado")

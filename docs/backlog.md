@@ -14,6 +14,11 @@
 
 ## P1 — próximo ciclo (valor alto, esforço moderado)
 
+0. ~~**Interface conversacional + canal Telegram**~~ ✅ **feito (adiantado do P1):** chat
+   estilo ChatGPT como interface principal (`/`) e bot de Telegram opcional
+   (`AIPE_TELEGRAM_TOKEN`), ambos sobre o mesmo cérebro determinístico e as mesmas
+   aprovações hash-vinculadas.
+
 1. **Canal do navegador na pesquisa automaticamente**: quando a busca web ou um site for
    bloqueado, criar pedido `abrir_url`+`ler_aba` para o usuário autorizar e o agente ler
    o resultado na aba autenticada (hoje o canal existe e é testado, mas a pesquisa não o

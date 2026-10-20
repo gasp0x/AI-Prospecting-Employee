@@ -33,9 +33,14 @@ def _ctx(request: Request, **extras) -> dict:
     return base
 
 
-# ---------------- Painel ----------------
+# ---------------- Chat (interface principal) ----------------
 
 @router.get("/", response_class=HTMLResponse)
+def chat(request: Request):
+    return templates.TemplateResponse(request, "chat.html", _ctx(request))
+
+
+@router.get("/painel", response_class=HTMLResponse)
 def painel(request: Request):
     tarefas = listar("tarefa", ordem="id DESC", limite=8)
     empresas_recentes = listar("empresa", where="estado != 'duplicata'", ordem="pontuacao DESC", limite=5)
