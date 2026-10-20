@@ -337,3 +337,27 @@ def test_lista_nomes_extrai_pessoas_das_paginas(banco_tmp, monkeypatch):
 def test_prospeccao_plural_de_negocio_continua_research(banco_tmp):
     r = chatbot.responder("procure clínicas de fisioterapia em Campinas (SP)")
     assert any("iniciada" in x.texto for x in r)
+
+
+def test_busca_geral_multi_fonte_com_enriquecimento(banco_tmp, monkeypatch):
+    from app.adapters import nominatim
+
+    monkeypatch.setattr(assistente.websearch, "buscar_detalhado", lambda consulta, limite=6: [
+        {"url": "https://carrosp.com.br/x", "titulo": "Lux Car Automóveis — SJC"},
+    ])
+    monkeypatch.setattr(nominatim, "buscar", lambda consulta, limite=4, somente_brasil=True: [{
+        "chave": "node/5", "nome": "Lux Car Automóveis",
+        "endereco": "Av. São José dos Campos 500", "cidade": "SJC", "uf": "SP",
+        "localizacao": "SJC/SP", "categoria": "car_dealer", "site": None,
+        "telefone": None, "fonte_url": "https://www.openstreetmap.org/node/5",
+    }])
+    monkeypatch.setattr(assistente.sites, "coletar_site", lambda url: type("C", (), {
+        "estado": "ok", "url_final": url, "detalhe": "",
+        "html": '<html><h1>Lux Car Automóveis</h1><script>{"@type":"AutoDealer","name":"Lux Car Automóveis"}</script></html>',
+    })())
+
+    r = chatbot.responder("carros de luxo em São José dos Campos")
+    texto = r[0].texto
+    assert "No mapa (OpenStreetMap)" in texto and "Lux Car Automóveis" in texto
+    assert any(a["rotulo"] == "🗺 Ver no Google Maps" for a in r[0].acoes)
+    assert any("google.com/search" in a["url"] for a in r[0].acoes)

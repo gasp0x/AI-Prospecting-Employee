@@ -178,3 +178,39 @@ def coletar_evidencias(
 
 def hash_conteudo(texto: str) -> str:
     return hashlib.sha256(texto.encode("utf-8")).hexdigest()
+
+
+def extrair_entidades(html: str) -> list[str]:
+    """Nomes/entidades citados na página (JSON-LD "name", og:site_name, h1).
+
+    Heurística ampla: devolve candidatos com fonte implícita (a própria página);
+    o chamador rotula como "citado na página", não como verificação.
+    """
+    entidades: list[str] = []
+
+    def adicionar(valor: str) -> None:
+        valor = re.sub(r"\s+", " ", valor).strip()
+        if 2 < len(valor) <= 90 and re.search(r"[A-Za-zÀ-ú]", valor) and valor not in entidades:
+            entidades.append(valor)
+
+    m_h1 = re.search(r"<h1[^>]*>(.*?)</h1>", html[:300_000], re.IGNORECASE | re.DOTALL)
+    if m_h1:
+        adicionar(re.sub(r"<[^>]+>", " ", m_h1.group(1)))
+    aspas = "[\"']"
+    padrao_og = (
+        r"property=" + aspas + r"og:site_name" + aspas + r"[^>]*content=" + aspas + r"([^" + aspas + r"]+)"
+    )
+    padrao_og_alt = (
+        r"content=" + aspas + r"([^" + aspas + r"]+)[^>]*property=" + aspas + r"og:site_name"
+    )
+    m_og = re.search(padrao_og, html[:100_000], re.IGNORECASE) or re.search(
+        padrao_og_alt, html[:100_000], re.IGNORECASE
+    )
+    if m_og:
+        adicionar(m_og.group(1))
+    padrao_name = r'"name"\s*:\s*"([^"\\]{3,90})"'
+    for m in re.finditer(padrao_name, html):
+        adicionar(m.group(1))
+        if len(entidades) >= 10:
+            break
+    return entidades

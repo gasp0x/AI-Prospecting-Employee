@@ -24,8 +24,8 @@ import httpx
 from urllib.parse import urlparse
 
 from .. import db
-from ..adapters import sites, websearch
-from ..engine.evidence import extrair_pagina
+from ..adapters import nominatim, sites, websearch
+from ..engine.evidence import extrair_entidades, extrair_pagina
 from ..config import settings
 from ..engine import approvals
 from .mensagens import Mensagem, registrar_agente
@@ -568,7 +568,7 @@ def _resumir_url(texto: str) -> list[Mensagem] | None:
     if resultado.estado != "ok":
         return [Mensagem(f"Não consegui ler {url} ({resultado.estado}: {resultado.detalhe or 'bloqueio'}). "
                          "Alternativa: abra no seu navegador com a extensão conectada.")]
-    from ..engine.evidence import extrair_pagina
+    from ..engine.evidence import extrair_entidades, extrair_pagina
 
     pagina = extrair_pagina(resultado.url_final, resultado.html)
     paragrafos = [p.strip() for p in pagina.texto.split("\n") if len(p.strip()) > 120]
@@ -650,6 +650,11 @@ def _limpar_consulta(texto: str) -> str:
     consulta = _PADRAO_NEGATIVA.sub("", consulta)
     for padrao in _PREENCHIMENTO:
         consulta = re.sub(padrao, " ", consulta, flags=re.IGNORECASE).strip()
+    # passada final: artigos/preposições que sobraram no início ("de carro de luxo" → "carro de luxo")
+    anterior = None
+    while anterior != consulta:
+        anterior = consulta
+        consulta = re.sub(r"^(de|da|do|dos|das|o|a|os|as|um|uma|para|pra)\s+", "", consulta, flags=re.IGNORECASE)
     return re.sub(r"\s+", " ", consulta).strip()
 
 
@@ -765,12 +770,52 @@ def busca_geral(texto: str) -> list[Mensagem]:
         return [Mensagem(f"Sem resultados na web para “{consulta}”.")]
 
     print(">>> ROTA: busca_geral → web <<<", flush=True)
+
+    # fontes múltiplas: lugares no mapa (OSM) + conteúdo das 2 principais páginas
+    secao_lugares = ""
+    try:
+        lugares = nominatim.buscar(consulta, limite=4)
+        if lugares:
+            secao_lugares = "\n\n**No mapa (OpenStreetMap):**\n" + "\n".join(
+                f"· **{l['nome']}** — {l['endereco'][:90]} ([fonte]({l['fonte_url']}))"
+                for l in lugares
+            )
+    except Exception:  # noqa: BLE001 — mapa é fonte extra; falha não derruba a resposta
+        pass
+
+    secao_detalhes = ""
+    for r in resultados[:2]:
+        try:
+            coleta = sites.coletar_site(r["url"])
+        except Exception:  # noqa: BLE001
+            continue
+        if coleta.estado != "ok":
+            continue
+        pagina = extrair_pagina(coleta.url_final, coleta.html)
+        entidades = extrair_entidades(coleta.html)[:5]
+        partes = [f"**{r['titulo'][:80]}** ({urlparse(coleta.url_final).netloc})"]
+        if pagina.meta_description:
+            partes.append(pagina.meta_description[:220])
+        if entidades:
+            partes.append("citam: " + ", ".join(entidades))
+        secao_detalhes += "\n\n· " + " · ".join(partes)
+
+    from urllib.parse import quote
+
+    acoes = [
+        {"rotulo": "🗺 Ver no Google Maps", "url": "https://www.google.com/maps/search/?api=1&query=" + quote(consulta)},
+        {"rotulo": "🔎 Abrir no Google", "url": "https://www.google.com/search?q=" + quote(consulta)},
+        {"rotulo": "🌍 Ver no OpenStreetMap", "url": "https://www.openstreetmap.org/search?query=" + quote(consulta)},
+    ]
+
     linhas = [f"**[{i}. {r['titulo'][:90]}]({r['url']})**" for i, r in enumerate(resultados, 1)]
-    return [Mensagem(
-        f"Busca por “{consulta}” — resultados na **web** (fontes públicas, agora):\n\n"
-        + "\n\n".join(linhas)
-        + "\n\nQuer que eu investigue alguma dessas fontes mais a fundo? Me diga o número ou o site."
-    )]
+    corpo = f"Busca por “{consulta}” — resultados na **web** (fontes públicas, agora):\n\n" + "\n\n".join(linhas)
+    if secao_detalhes:
+        corpo += "\n\n**O que as principais páginas trazem:**" + secao_detalhes
+    if secao_lugares:
+        corpo += secao_lugares
+    corpo += "\n\nQuer que eu investigue alguma dessas fontes mais a fundo? Me diga o número ou o site."
+    return [Mensagem(corpo, acoes=acoes)]
 
 
 

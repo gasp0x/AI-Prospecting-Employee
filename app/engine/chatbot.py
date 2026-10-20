@@ -91,8 +91,10 @@ def responder(texto: str) -> list[Mensagem]:
     if sinais_lookup or sinais_dados or verbos_busca:
         return assistente.busca_geral(texto)
 
-    # pergunta aberta: LLM opcional; sem LLM, orientação honesta
-    return assistente.resposta_livre(texto)
+    # tópico livre: com LLM responde; sem LLM, busca na web com fontes
+    if llm_disponivel():
+        return assistente.resposta_livre(texto)
+    return assistente.busca_geral(texto)
 
 
 # ---------- intenções ----------
