@@ -352,7 +352,13 @@ def test_busca_geral_multi_fonte_com_enriquecimento(banco_tmp, monkeypatch):
 
     monkeypatch.setattr(assistente.websearch, "buscar_detalhado", lambda consulta, limite=6: [
         {"url": "https://carrosp.com.br/x", "titulo": "Lux Car Automóveis — SJC"},
+        {"url": "https://www.econodata.com.br/consulta-empresa/50184132000199-bar-e-choperia", "titulo": "Bar e Choperia Las Biritas Ltda"},
     ])
+    monkeypatch.setattr(assistente.brasilapi, "consultar_cnpj", lambda cnpj: {
+        "cnpj": cnpj.replace(".", "").replace("/", "").replace("-", ""),
+        "razao_social": "BAR E CHOPERIA LAS BIRITAS LTDA", "municipio": "São José dos Campos",
+        "uf": "SP", "cnae_descricao": "Bares e outros", "situacao": "Ativa",
+    } if "50184132000199" in cnpj.replace(".", "").replace("/", "").replace("-", "") else None)
     monkeypatch.setattr(nominatim, "buscar", lambda consulta, limite=4, somente_brasil=True: [{
         "chave": "node/5", "nome": "Lux Car Automóveis",
         "endereco": "Av. São José dos Campos 500", "cidade": "SJC", "uf": "SP",

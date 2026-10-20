@@ -25,7 +25,7 @@ import httpx
 from urllib.parse import urlparse
 
 from .. import db
-from ..adapters import macos_apps, nominatim, sites, websearch
+from ..adapters import brasilapi, macos_apps, nominatim, sites, websearch
 from ..engine.evidence import extrair_entidades, extrair_pagina
 from ..config import settings
 from ..engine import approvals
@@ -611,7 +611,7 @@ def _buscar_info(texto: str) -> list[Mensagem] | None:
             m_alvo = re.search(
                 r"\b(?:informacoes|endereco|telefone|dados|contatos?)\b\s*"
                 r"(?:como\s+endereco\s+e\s+numero\s+de\s+telefone\s+)?"
-                r"(?:das?|dos?|de|da)\s+(?:as\s+|os\s+)?"
+                r"(?:(?:sobre|acerca\s+de|das?|dos?|de|da)\s+)(?:as\s+|os\s+)?"
                 r"(?:lojas?|empresas?|clinicas?|escritorios?|academias?|oficinas?|restaurantes?|padarias?|concessionarias?)?\s*"
                 r"(.+?)(?:\s+(?:na|no|em)\s+(?:cidade\s+de\s+)?[\w\s]+)?$",
                 n, re.IGNORECASE,
@@ -632,27 +632,8 @@ def _buscar_info(texto: str) -> list[Mensagem] | None:
         return [Mensagem(f"Fonte pública indisponível agora ({type(erro).__name__}). Tente de novo em instantes.")]
 
     if not candidatos:
-        # mapa vazio → busca na web (pessoas, profissionais, qualquer tema)
-        try:
-            web = websearch.buscar_detalhado(f"{alvo} {cidade or ''}".strip(), limite=5)
-        except websearch.BuscaBloqueada:
-            web = []
-        if web:
-            print(">>> ROTA: _buscar_info → web <<<", flush=True)
-            linhas = [f"· **[{r['titulo'][:90]}]({r['url']})**" for r in web]
-            return [Mensagem(
-                f"Não achei “{alvo}”"
-                + (f" em {cidade}" if cidade else "")
-                + " no mapa (OpenStreetMap), mas encontrei na **web**:\n\n" + "\n".join(linhas)
-                + "\n\nFontes: motores de busca públicos (agora). Para contatos diretos das "
-                  "empresas, diga: procure " + alvo + " em " + (cidade or "sua cidade") + "."
-            )]
-        return [Mensagem(
-            f"Não encontrei “{alvo}”"
-            + (f" em {cidade}" if cidade else "")
-            + " nem no mapa nem na web agora (os motores estão bloqueando este IP — "
-              "registrei a limitação). Tente novamente em alguns minutos."
-        )]
+        # mapa vazio → resposta enriquecida completa: web + CNPJ (Receita) + conteúdo das páginas
+        return busca_geral(f"{alvo} {cidade or ''}".strip())
 
     blocos = []
     for c in candidatos[:4]:
@@ -918,7 +899,30 @@ def busca_geral(texto: str) -> list[Mensagem]:
 
     print(">>> ROTA: busca_geral → web <<<", flush=True)
 
-    # fontes múltiplas: lugares no mapa (OSM) + conteúdo das 2 principais páginas
+    # ---- fichas oficiais: CNPJs detectados em URLs/títulos → Receita (BrasilAPI) ----
+    secao_cnpj = ""
+    texto_resultados = " ".join(r["url"] + " " + r["titulo"] for r in resultados)
+    cnpjs = list(dict.fromkeys(
+        re.findall(r"\b(\d{2}\d{3}\d{3}\d{4}\d{2})\b", texto_resultados)
+    ))[:2]
+    for cnpj in cnpjs:
+        try:
+            dados = brasilapi.consultar_cnpj(cnpj)
+        except Exception:  # noqa: BLE001
+            dados = None
+        if not dados:
+            continue
+        formatado = f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:12]}-{cnpj[12:]}"
+        secao_cnpj += (
+            f"\n\n🏢 **{dados['razao_social']}** — CNPJ {formatado}\n"
+            f"   · Situação: {dados['situacao'] or '?'} · {dados['municipio']}/{dados['uf']}\n"
+            f"   · CNAE: {dados['cnae_descricao'] or '?'}\n"
+            f"   · Fonte: dados abertos da Receita Federal via BrasilAPI (coletado agora)"
+        )
+    if secao_cnpj:
+        secao_cnpj = "**Registros oficiais encontrados (Receita Federal):**" + secao_cnpj
+
+    # fontes múltiplas: lugares no mapa (OSM) + conteúdo das 3 principais páginas
     secao_lugares = ""
     try:
         lugares = nominatim.buscar(consulta, limite=4)
@@ -931,7 +935,7 @@ def busca_geral(texto: str) -> list[Mensagem]:
         pass
 
     secao_detalhes = ""
-    for r in resultados[:2]:
+    for r in resultados[:3]:
         try:
             coleta = sites.coletar_site(r["url"])
         except Exception:  # noqa: BLE001
@@ -943,6 +947,13 @@ def busca_geral(texto: str) -> list[Mensagem]:
         partes = [f"**{r['titulo'][:80]}** ({urlparse(coleta.url_final).netloc})"]
         if pagina.meta_description:
             partes.append(pagina.meta_description[:220])
+        contato = []
+        if pagina.telefones:
+            contato.append(f"tel: {pagina.telefones[0]}")
+        if pagina.emails:
+            contato.append(f"e-mail: {pagina.emails[0]}")
+        if contato:
+            partes.append(" · ".join(contato))
         if entidades:
             partes.append("citam: " + ", ".join(entidades))
         secao_detalhes += "\n\n· " + " · ".join(partes)
@@ -957,6 +968,8 @@ def busca_geral(texto: str) -> list[Mensagem]:
 
     linhas = [f"**[{i}. {r['titulo'][:90]}]({r['url']})**" for i, r in enumerate(resultados, 1)]
     corpo = f"Busca por “{consulta}” — resultados na **web** (fontes públicas, agora):\n\n" + "\n\n".join(linhas)
+    if secao_cnpj:
+        corpo += "\n\n" + secao_cnpj
     if secao_detalhes:
         corpo += "\n\n**O que as principais páginas trazem:**" + secao_detalhes
     if secao_lugares:
