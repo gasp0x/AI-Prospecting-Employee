@@ -533,3 +533,31 @@ def test_extrair_colidado_estrutura_dados(banco_tmp):
     assert "Dra. Ana Lima" in texto
     assert "contato@clinica.com.br" in texto
     assert "12.345.678/0001-90" in texto
+
+
+def test_informacoes_com_avaliacoes_vai_para_extracao(banco_tmp, monkeypatch):
+    """A frase exata da 3ª falha: informações + profissão + filtro de avaliação."""
+    def fake_detalhado(consulta, limite=6):
+        assert "cardiologistas" in consulta.lower()
+        assert "São José dos Campos" in consulta
+        return [{"url": "https://tuasaude.com/y", "titulo": "Cardiologistas SJC"}]
+
+    monkeypatch.setattr(assistente.websearch, "buscar_detalhado", fake_detalhado)
+
+    class FakeColeta:
+        estado = "ok"; detalhe = ""
+        def __init__(self, url): self.url_final = url; self.html = ""
+    monkeypatch.setattr(assistente.sites, "coletar_site", lambda url: FakeColeta())
+    monkeypatch.setattr(assistente, "extrair_pagina", lambda u, h: type("P", (), {
+        "texto": "Cardiologistas da Santa Casa: Dr. João Pereira — (12) 3600-1000 — avaliação 7,5. "
+                 "Dr. Pedro Alves — avaliação 6,0.",
+        "titulo": "Cardiologia SJC", "meta_description": "",
+    })())
+
+    r = chatbot.responder("me de informações de cardiologistas com avaliações acima de 7,0 na cidade de São José dos Campos")
+    texto = r[0].texto
+    assert "Dr. João Pereira" in texto          # extraído da página
+    assert "(12) 3600-1000" in texto            # telefone associado
+    assert "7.5" in texto                        # avaliação exibida
+    assert "Dr. Pedro Alves" not in texto        # filtro ≥7,0 aplicado
+    assert "StudHistória" not in texto           # não caiu na busca genérica de links

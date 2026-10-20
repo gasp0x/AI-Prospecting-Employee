@@ -893,11 +893,13 @@ def lista_nomes(texto: str) -> list[Mensagem] | None:
     """
     n = _norm(texto)
     gatilho_pessoa = bool(re.search(
-        r"\b(nomes?|quem (s[ãa]o|trabalha|trabalham|atende|atendem)|lista de)\b", n
+        r"\b(nomes?|quem (s[ãa]o|trabalha|trabalham|atende|atendem)|lista de"
+        r"|avalia[çc][ õo]es?|avalia\w*|melhores|informa[çc][ õo]es?|dados)\b", n
     )) and bool(re.search(
         r"\b(dras?\.?|medic[oa]s?|cardiologistas?|dentistas?|advogad[oa]s?|professores?|professoras?"
         r"|profissionais?|especialistas?|pessoas?|engenheir[oa]s?|nutricionistas?|psic[óo]log[oa]s?"
-        r"|veterin[áa]ri[oa]s?|fisioterapeutas?|dermatologistas?|pediatras?)\b", n
+        r"|veterin[áa]ri[oa]s?|fisioterapeutas?|dermatologistas?|pediatras?"
+        r"|lojas?|empresas?|bares?|choperias?|restaurantes?|concessionarias?)\b", n
     ))
     if not gatilho_pessoa:
         return None
@@ -1018,7 +1020,6 @@ def busca_geral(texto: str) -> list[Mensagem]:
     if not resultados:
         return [Mensagem(f"Sem resultados na web para “{consulta}”.")]
 
-    print(">>> ROTA: busca_geral → web <<<", flush=True)
 
     # ---- fichas oficiais: CNPJs detectados em URLs/títulos → Receita (BrasilAPI) ----
     secao_cnpj = ""
