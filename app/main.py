@@ -29,6 +29,9 @@ async def lifespan(_app: FastAPI):
 
         iniciar_se_configurado()
         logging.info("Canal Telegram ativo.")
+    from .engine.assistente import iniciar_agendador
+
+    iniciar_agendador()
     yield
 
 

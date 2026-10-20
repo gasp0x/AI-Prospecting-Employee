@@ -1,0 +1,107 @@
+"""Testes do assistente geral (habilidades sem LLM + pergunta aberta com LLM)."""
+from app import db
+from app.engine import assistente, chatbot
+from tests.conftest import aguardar
+
+
+def test_calculo_porcentagem_e_expressao(banco_tmp):
+    r = chatbot.responder("quanto é 15% de 240")
+    assert "36" in r[0].texto
+    r = chatbot.responder("calcula 12*7+3")
+    assert "87" in r[0].texto
+    assert chatbot.responder("calcula delete from usuarios") == [] or "erro" not in r[0].texto.lower()
+
+
+def test_calculo_rejeita_codigo(banco_tmp):
+    r = chatbot.responder("calcula __import__('os').system('ls')")
+    # não executa nada: cai no fluxo honesto de pergunta aberta
+    assert len(r) == 1 and "__import__" not in r[0].texto
+
+
+def test_hora_e_data(banco_tmp):
+    r = chatbot.responder("que horas são?")
+    assert "Agora são" in r[0].texto
+    r = chatbot.responder("que dia é hoje")
+    assert "/" in r[0].texto
+
+
+def test_lembrete_cria_entrega_e_lista(banco_tmp):
+    r = chatbot.responder("lembre-me de ligar para o João em 30 minutos")
+    assert "Vou te lembrar" in r[0].texto and "João" in r[0].texto
+    lembretes = db.listar("lembrete", where="estado = 'pendente'")
+    assert len(lembretes) == 1
+    assert "Lembretes ativos" in chatbot.responder("meus lembretes")[0].texto
+
+    # vence o lembrete e verifica a entrega como mensagem do agente no chat
+    db.atualizar("lembrete", lembretes[0]["id"], {"quando_utc": "2020-01-01T00:00:00Z"})
+    entregues = assistente.verificar_lembretes()
+    assert len(entregues) == 1
+    mensagens = db.listar("chat_msg", where="papel = 'agente'", ordem="id DESC", limite=1)
+    assert "Lembrete" in mensagens[0]["texto"] and "João" in mensagens[0]["texto"]
+    assert db.buscar_um("lembrete", lembretes[0]["id"])["estado"] == "entregue"
+
+
+def test_cotacao_com_fonte(banco_tmp, monkeypatch):
+    import httpx
+
+    fixture = {"USD BRL": {"bid": "5.4321", "create_date": "2026-10-19 18:00:00"},
+               "EUR BRL": {"bid": "6.3210", "create_date": "2026-10-19 18:00:00"}}
+
+    class Resposta:
+        status_code = 200
+
+        def raise_for_status(self): pass
+
+        def json(self): return fixture
+
+    monkeypatch.setattr(assistente.httpx, "get", lambda *a, **k: Resposta())
+    r = chatbot.responder("cotação do dólar")
+    assert "R$ 5.4321" in r[0].texto and "Dólar" in r[0].texto
+
+
+def test_clima_com_geocode_e_open_meteo(banco_tmp, monkeypatch):
+    respostas_http = [
+        type("R1", (), {"json": staticmethod(lambda: [{"lat": "-22.9", "lon": "-47.0", "name": "Campinas"}]), "status_code": 200})(),
+        type("R2", (), {"json": staticmethod(lambda: {"current_weather": {"temperature": 25.0, "weathercode": 2, "windspeed": 8.0}}), "status_code": 200})(),
+    ]
+    monkeypatch.setattr(assistente.httpx, "get", lambda *a, **k: respostas_http.pop(0))
+    r = chatbot.responder("clima em Campinas")
+    assert "25.0" in r[0].texto or "25" in r[0].texto
+    assert "Campinas" in r[0].texto and "parcialmente nublado" in r[0].texto
+
+
+def test_resumo_extrativo_de_pagina(banco_tmp, monkeypatch):
+    from app.adapters.sites import ResultadoColeta
+
+    html = ("<html><head><title>Clínica Exemplo</title>"
+            "<meta name='description' content='Clínica de fisioterapia em Campinas.'></head>"
+            "<body><p>" + "texto longo enough para parágrafo. " * 12 + "</p></body></html>")
+    monkeypatch.setattr(assistente.sites, "coletar_site",
+                        lambda url: ResultadoColeta(url=url, url_final=url, estado="ok", html=html))
+    r = chatbot.responder("resume https://clinica.com.br")
+    assert "Clínica Exemplo" in r[0].texto
+    assert "extrativo" in r[0].texto.lower()
+
+
+def test_anotar_cria_aprovacao_nao_grava_direto(banco_tmp):
+    r = chatbot.responder("anote: reunião com o cliente na sexta às 14h")
+    assert "Apple Notes" in r[0].texto and "aprovar" in r[0].texto.lower()
+    aprovacoes = db.listar("aprovacao", where="tipo_acao = 'criar_nota_notes'")
+    assert aprovacoes and aprovacoes[0]["estado"] == "pendente"
+
+
+def test_pergunta_aberta_com_llm_e_sem_llm(banco_tmp, monkeypatch):
+    monkeypatch.setattr(assistente, "llm_disponivel", lambda: True)
+    monkeypatch.setattr(assistente, "completar_texto", lambda system, user: "Machado de Assis foi um escritor brasileiro.")
+    r = chatbot.responder("quem foi Machado de Assis?")
+    assert "Machado" in r[0].texto
+
+    monkeypatch.setattr(assistente, "llm_disponivel", lambda: False)
+    r = chatbot.responder("escreva um poema sobre vendas")
+    assert "LLM" in r[0].texto and "ajuda" in r[0].texto
+
+
+def test_prospeccao_continua_funcionando_apos_assistente(banco_tmp, monkeypatch):
+    r = chatbot.responder("procure dentistas em Curitiba (PR)")
+    assert any("iniciada" in x.texto for x in r)
+    assert aguardar(lambda: True)  # sanidade

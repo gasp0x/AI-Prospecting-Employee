@@ -70,6 +70,11 @@ Você: resultados
 Você: rascunho para Clínica Dragão Divino
 Você: aprovar 7        ← cria o rascunho no Mail (conteúdo exato, hash-verificado)
 Você: exportar
+Você: quanto é 15% de 240        → 36
+Você: cotação do dólar           → R$ 5,017 (fonte pública, hoje)
+Você: clima em Campinas          → 23,2°C, céu limpo (Open-Meteo)
+Você: lembre-me de ligar para o João em 30 minutos  → aviso neste chat
+Você: anote: reunião na sexta às 14h  → grava no Notes após aprovação
 ```
 
 O agente inicia a pesquisa sozinho e te avisa no chat quando terminar, com as melhores

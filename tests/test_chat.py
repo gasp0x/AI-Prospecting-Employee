@@ -13,7 +13,7 @@ def test_ajuda_e_fallback(banco_tmp):
     respostas = chatbot.responder("ajuda")
     assert "funcionário de prospecção" in respostas[0].texto.lower()
     respostas = chatbot.responder("abcdefxyz sem sentido")
-    assert "não entendi" in respostas[0].texto.lower()
+    assert "llm" in respostas[0].texto.lower() and "ajuda" in respostas[0].texto.lower()
 
 
 def test_icp_via_chat_inicia_pesquisa_e_notifica_conclusao(banco_tmp, monkeypatch):

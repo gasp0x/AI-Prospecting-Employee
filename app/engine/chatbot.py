@@ -17,38 +17,14 @@ import unicodedata
 from .. import db
 from ..adapters.browser import ponte_navegador
 from ..config import settings
-from ..engine import approvals, drafting, research
+from ..engine import approvals, assistente, drafting, research
 from ..engine.icp import extrair_criterios
 from ..engine.tasks import ROTULOS_ESTADO, gerenciador_tarefas
+from .mensagens import Mensagem, registrar_agente, registrar_usuario
 
 
 def _norm(texto: str) -> str:
     return "".join(c for c in unicodedata.normalize("NFD", texto) if unicodedata.category(c) != "Mn").lower().strip()
-
-
-class Mensagem:
-    def __init__(self, texto: str, acoes: list[dict] | None = None, tarefa_id: int | None = None, tipo: str = "texto"):
-        self.texto = texto
-        self.acoes = acoes or []
-        self.tarefa_id = tarefa_id
-        self.tipo = tipo
-
-
-def registrar_usuario(texto: str, canal: str = "web") -> int:
-    return db.inserir("chat_msg", {"papel": "usuario", "texto": texto, "ts": db.agora()})
-
-
-def registrar_agente(msg: Mensagem, tarefa_id: int | None = None) -> int:
-    return db.inserir(
-        "chat_msg",
-        {
-            "papel": "agente",
-            "texto": msg.texto,
-            "acoes_json": db.para_json(msg.acoes) if msg.acoes else None,
-            "tarefa_id": msg.tarefa_id or tarefa_id,
-            "ts": db.agora(),
-        },
-    )
 
 
 def responder(texto: str) -> list[Mensagem]:
@@ -84,35 +60,36 @@ def responder(texto: str) -> list[Mensagem]:
     if re.search(r"\b(resultados?|empresas? (encontradas|achadas|qualificadas)|o que (voce|vc) (achou|encontrou)|lista|melhores)\b", n):
         return [_resultados()]
 
-    # descrição de ICP: "procure/ache/encontre X" ou texto longo com segmento
-    if re.search(r"\b(procur[ea]?|ach[ea]?|encontr[ea]?|busqu?e|busca[r]?|prospector?|liste)\b", n) or len(n.split()) >= 5:
+    # habilidades gerais do assistente (cálculo, clima, cotações, lembretes, notas…)
+    habilidades = assistente.tentar(texto)
+    if habilidades is not None:
+        return habilidades
+
+    # prospecção: verbo explícito de busca → ICP + pesquisa
+    if re.search(r"\b(procur[ea]|ach[ea]|encontr[ea]|busqu?e|busca|liste)\b", n):
         return _novo_icp(texto)
 
-    return [
-        Mensagem(
-            "Não entendi. Você pode, por exemplo:\n"
-            '· "procure clínicas de fisioterapia em Campinas (SP)"\n'
-            '· "status"\n· "resultados"\n· "rascunho para Nexxus Fisioterapia"\n'
-            '· "aprovações" · "aprovar 3" · "exportar"\n· "ajuda"'
-        )
-    ]
+    # pergunta aberta: LLM opcional; sem LLM, orientação honesta
+    return assistente.resposta_livre(texto)
 
 
 # ---------- intenções ----------
 
 def _ajuda() -> Mensagem:
     return Mensagem(
-        "Sou seu funcionário de prospecção. Fale comigo em português:\n\n"
-        "🔍 **Novo ICP** — \"procure clínicas de fisioterapia em Campinas (SP), com site próprio\"\n"
-        "   → eu extraio os critérios, pesquiso em fontes públicas e te reporto as qualificadas\n"
-        "📊 **Status** — \"status\" (andamento da pesquisa em curso)\n"
-        "🏢 **Resultados** — \"resultados\" ou \"resultados do ICP 2\"\n"
-        "✍️ **Rascunho** — \"rascunho para Nexxus Fisioterapia\" (gera a mensagem com as evidências)\n"
-        "✅ **Aprovações** — \"aprovações\" lista; \"aprovar 3\" ou \"negar 3\" decide\n"
-        "📦 **Exportar** — \"exportar\" (links CSV/JSON)\n"
-        "🌐 **Navegador** — \"navegador\" (estado da extensão)\n\n"
-        "Regras que eu nunca quebro: só afirmo o que coletei de fontes reais (com URL e data) "
-        "e nenhuma ação externa acontece sem sua aprovação com o conteúdo exato."
+        "Sou seu funcionário de prospecção **e** seu assistente pessoal. Fale comigo em português:\n\n"
+        "🔍 **Prospecção** — \"procure clínicas de fisioterapia em Campinas (SP)\" → pesquiso em fontes\n"
+        "   públicas, qualifico com evidências e te reporto; \"status\" · \"resultados\" · \"exportar\"\n"
+        "✍️ **Abordagem** — \"rascunho para Nexxus Fisioterapia\" → mensagem pronta; \"aprovar 3\" executa\n"
+        "🧮 **Cálculos** — \"quanto é 15% de 240\" · \"calcula 12*7+3\"\n"
+        "💰 **Cotações** — \"cotação do dólar\"\n"
+        "🌤 **Clima** — \"clima em Campinas\"\n"
+        "⏰ **Lembretes** — \"lembre-me de ligar para o João em 30 minutos\" (aviso neste chat) · \"meus lembretes\"\n"
+        "📝 **Anotações** — \"anote: reunião com o cliente na sexta\" (grava no Apple Notes após aprovar)\n"
+        "🌐 **Resumos** — \"resume https://exemplo.com.br\" (extrativo) · \"abra github\"\n"
+        "💬 **Perguntas abertas** — com um LLM configurado no `.env`, respondo o que você precisar\n\n"
+        "Regras que eu nunca quebro: só afirmo o que coletei de fontes reais (com URL e data) e "
+        "nenhuma ação externa acontece sem sua aprovação com o conteúdo exato (SHA-256)."
     )
 
 

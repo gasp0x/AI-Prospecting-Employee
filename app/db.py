@@ -109,6 +109,15 @@ CREATE TABLE IF NOT EXISTS pedido_extensao (
   decidida_em TEXT
 );
 
+CREATE TABLE IF NOT EXISTS lembrete (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  texto TEXT NOT NULL,
+  quando_utc TEXT NOT NULL,
+  estado TEXT NOT NULL DEFAULT 'pendente',
+  criado_em TEXT NOT NULL,
+  entregue_em TEXT
+);
+
 CREATE TABLE IF NOT EXISTS chat_msg (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   papel TEXT NOT NULL,
