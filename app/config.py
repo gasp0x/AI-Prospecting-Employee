@@ -60,6 +60,9 @@ class Config:
     # Canal Telegram opcional (bot via @BotFather)
     token_telegram: str = ""
 
+    # OpenClaw opcional (cérebro generalista "por baixo dos panos")
+    openclaw_bin: str = ""
+
     # LLM opcional (endpoint compatível com OpenAI). Vazio = modo determinístico.
     llm_base_url: str = ""
     llm_api_key: str = ""
@@ -97,6 +100,7 @@ def carregar_config() -> Config:
         token_extensao=pegar("AIPE_TOKEN_EXTENSAO"),
         assinatura=pegar("AIPE_ASSINATURA"),
         token_telegram=pegar("AIPE_TELEGRAM_TOKEN"),
+        openclaw_bin=pegar("AIPE_OPENCLAW_BIN"),
         llm_base_url=pegar("LLM_BASE_URL"),
         llm_api_key=pegar("LLM_API_KEY"),
         llm_modelo=pegar("LLM_MODELO"),

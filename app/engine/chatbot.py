@@ -17,7 +17,8 @@ import unicodedata
 from .. import db
 from ..adapters.browser import ponte_navegador
 from ..config import settings
-from ..engine import approvals, assistente, drafting, research
+from ..adapters import macos_apps, nominatim, sites, websearch
+from ..engine import approvals, assistente, drafting, openclaw, research
 from ..engine.icp import extrair_criterios
 from ..engine.llm import disponivel as llm_disponivel
 from ..engine.tasks import ROTULOS_ESTADO, gerenciador_tarefas
@@ -91,9 +92,22 @@ def responder(texto: str) -> list[Mensagem]:
     if sinais_lookup or sinais_dados or verbos_busca:
         return assistente.busca_geral(texto)
 
-    # tópico livre: com LLM responde; sem LLM, busca na web com fontes
+    # tópico livre: LLM → OpenClaw (se instalado) → busca na web com fontes
     if llm_disponivel():
         return assistente.resposta_livre(texto)
+
+    if openclaw.disponivel():
+        resposta, erro = openclaw.consultar(texto)
+        if resposta:
+            return [Mensagem(
+                f"🦞 (via OpenClaw)\n\n{resposta}",
+                acoes=[{"rotulo": "Abrir no Google", "url": "https://www.google.com/search?q=" + __import__("urllib.parse", fromlist=["quote"]).quote(texto)}],
+            )]
+        nota = f"\n\n_(OpenClaw indisponível: {erro})_" if erro else ""
+        respostas = assistente.busca_geral(texto)
+        respostas[-1].texto += nota
+        return respostas
+
     return assistente.busca_geral(texto)
 
 

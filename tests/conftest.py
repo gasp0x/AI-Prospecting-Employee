@@ -5,6 +5,14 @@ import time
 
 import pytest
 
+
+@pytest.fixture(autouse=True)
+def _openclaw_off(monkeypatch):
+    """Testes unitários não chamam o binário real do OpenClaw."""
+    from app.engine import openclaw as oc
+
+    monkeypatch.setattr(oc, "disponivel", lambda: False)
+
 from app.config import settings
 
 

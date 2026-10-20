@@ -1,6 +1,7 @@
 """Testes do assistente geral (habilidades sem LLM + pergunta aberta com LLM)."""
 from app import db
 from app.engine import assistente, chatbot
+from app.engine import openclaw as mod_openclaw
 from tests.conftest import aguardar
 
 
@@ -446,3 +447,34 @@ def test_lista_apps_instalados(banco_tmp, monkeypatch):
                         lambda: ["Safari", "Notes", "Xcode"])
     r = chatbot.responder("apps instalados")
     assert "Safari" in r[0].texto and "3 aplicativos" in r[0].texto
+
+
+def test_openclaw_ponte_responde_quando_disponivel(banco_tmp, monkeypatch):
+    """Mensagens livres vão para o OpenClaw quando instalado e configurado."""
+    chamadas = []
+    monkeypatch.setattr(mod_openclaw, "disponivel", lambda: True)
+    def fake_consultar(mensagem, timeout_s=120):
+        chamadas.append(mensagem)
+        return "Resposta do OpenClaw sobre o assunto.", None
+    monkeypatch.setattr(mod_openclaw, "consultar", fake_consultar)
+
+    r = chatbot.responder("me explique buracos negros")
+    assert "OpenClaw" in r[0].texto
+    assert "Resposta do OpenClaw sobre o assunto." in r[0].texto
+    assert chamadas == ["me explique buracos negros"]
+
+
+def test_openclaw_sem_chave_cai_para_busca_web(banco_tmp, monkeypatch):
+    from app.adapters.websearch import BuscaBloqueada
+
+    monkeypatch.setattr(mod_openclaw, "disponivel", lambda: True)
+    def fake_consultar(mensagem, timeout_s=120):
+        return None, "OpenClaw sem chave de LLM configurada"
+    monkeypatch.setattr(mod_openclaw, "consultar", fake_consultar)
+    def bloqueada(consulta, limite=6):
+        raise assistente.websearch.BuscaBloqueada("motores bloqueados")
+    monkeypatch.setattr(assistente.websearch, "buscar_detalhado", bloqueada)
+
+    r = chatbot.responder("me explique buracos negros")
+    assert "OpenClaw indisponível" in r[0].texto
+    assert "motores bloqueados" in r[0].texto
