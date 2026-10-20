@@ -79,8 +79,9 @@ def verificar_lembretes() -> list[db.sqlite3.Row]:
 
 def tentar(texto: str) -> list[Mensagem] | None:
     """Tenta as habilidades determinísticas; None = não é comando conhecido."""
-    for handler in (_hora_data, _calculo, _cotacao, _clima, _lembrete_criar,
-                    _lembrete_listar, _buscar_info, _resumir_url, _abrir_site, _anotar):
+    for handler in (_hora_data, _calculo, _cotacao, _clima, _lembrete_sistema, _agenda,
+                    _email_chat, _lembrete_criar, _lembrete_listar, _buscar_info,
+                    _resumir_url, _abrir_site, _anotar):
         try:
             resposta = handler(texto)
         except Exception as erro:  # noqa: BLE001 — habilidade falhou; tenta a próxima
@@ -263,6 +264,159 @@ def _lembrete_listar(texto: str) -> list[Mensagem] | None:
         return [Mensagem("Nenhum lembrete ativo.")]
     linhas = [f"· #{l['id']} {l['quando_utc']} — {l['texto']}" for l in pendentes]
     return [Mensagem("Lembretes ativos:\n" + "\n".join(linhas))]
+
+
+
+
+_DIAS_SEMANA = {"segunda": 0, "terca": 1, "terça": 1, "quarta": 2, "quinta": 3,
+                "sexta": 4, "sabado": 5, "sábado": 5, "domingo": 6}
+
+
+def interpretar_quando(texto: str, base: datetime | None = None) -> tuple[datetime, str] | None:
+    """Extrai data/hora em pt-BR. Retorna (momento, texto_restante) ou None.
+
+    Aceita: "amanhã às 14h", "hoje 15:30", "dia 25/10 às 9h", "25/10/2026 14:30",
+    "em 30 minutos", "em 2 horas", "sexta às 10h", "próxima segunda às 9h".
+    """
+    base = base or datetime.now()
+
+    # 1) hora primeiro (e sai do texto restante para não bagunçar as posições)
+    hora = None
+    restante = texto
+    m_hora = (re.search(r"\b(?:[àa]s\s*)?(\d{1,2})[:h](\d{2})\b", restante, re.IGNORECASE)
+              or re.search(r"\b(?:[àa]s\s*)?(\d{1,2})\s*h(?:oras?)?\b", restante, re.IGNORECASE))
+    if m_hora:
+        hora = (int(m_hora.group(1)), int(m_hora.group(2)) if m_hora.lastindex and m_hora.lastindex > 1 and m_hora.group(2) else 0)
+        restante = (restante[:m_hora.start()] + " " + restante[m_hora.end():]).strip()
+
+    # 2) data base
+    quando = None
+    m_rel = re.search(r"\bem\s+(\d+)\s*(minutos?|min|horas?|h|dias?|semanas?)\b", restante, re.IGNORECASE)
+    m_data = re.search(r"\b(?:dia\s+)?(\d{1,2})/(\d{1,2})(?:/(\d{4}))?\b", restante)
+    m_amanha = re.search(r"\bamanh[ãa]\b", restante, re.IGNORECASE)
+    m_dia_semana = re.search(
+        r"\b(?:pr[óo]xim[ao]\s+|essa\s+|esta\s+)?(segunda|ter[çc]a|quarta|quinta|sexta|s[áa]bado|domingo)(?:-feira)?\b",
+        restante, re.IGNORECASE,
+    )
+    m_hoje = re.search(r"\bhoje\b", restante, re.IGNORECASE)
+
+    if m_rel:
+        quantidade = int(m_rel.group(1))
+        unidade = m_rel.group(2).lower()
+        quando = base + timedelta(
+            minutes=quantidade * {"min": 1, "minutos": 1, "h": 60, "horas": 60,
+                                  "dias": 1440, "dia": 1440, "semanas": 10080}.get(unidade, 60)
+        )
+        restante = (restante[:m_rel.start()] + " " + restante[m_rel.end():]).strip()
+    elif m_data:
+        dia, mes = int(m_data.group(1)), int(m_data.group(2))
+        ano = int(m_data.group(3)) if m_data.group(3) else base.year
+        quando = base.replace(year=ano, month=mes, day=dia, hour=9, minute=0, second=0, microsecond=0)
+        if quando < base:
+            quando = quando.replace(year=ano + 1)
+        restante = (restante[:m_data.start()] + " " + restante[m_data.end():]).strip()
+    elif m_amanha:
+        quando = (base + timedelta(days=1)).replace(hour=9, minute=0, second=0, microsecond=0)
+        restante = re.sub(r"\bamanh[ãa]\b", " ", restante, flags=re.IGNORECASE).strip()
+    elif m_dia_semana:
+        nome = _norm(m_dia_semana.group(1))
+        alvo = _DIAS_SEMANA.get(nome, 0)
+        dias_ahead = (alvo - base.weekday()) % 7
+        if dias_ahead == 0:
+            dias_ahead = 7
+        quando = (base + timedelta(days=dias_ahead)).replace(hour=9, minute=0, second=0, microsecond=0)
+        restante = re.sub(
+            r"\b(?:pr[óo]xim[ao]\s+|essa\s+|esta\s+)?(segunda|ter[çc]a|quarta|quinta|sexta|s[áa]bado|domingo)(?:-feira)?\b",
+            " ", restante, flags=re.IGNORECASE,
+        ).strip()
+    elif m_hoje:
+        quando = base
+        restante = re.sub(r"\bhoje\b", " ", restante, flags=re.IGNORECASE).strip()
+    else:
+        return None
+
+    if hora:
+        h, mnt = hora
+        quando = quando.replace(hour=min(h, 23), minute=min(mnt, 59), second=0, microsecond=0)
+    return quando, re.sub(r"\s+", " ", restante).strip(" ,.")
+
+
+def _lembrete_sistema(texto: str) -> list[Mensagem] | None:
+    """Lembrete no app Lembretes do macOS (com aprovação)."""
+    n = _norm(texto)
+    if not re.search(r"\b(no lembretes|no reminders|no app de lembretes|lembretes do (mac|sistema))\b", n):
+        return None
+    extraido = interpretar_quando(texto)
+    if extraido is None:
+        return [Mensagem("Quando? Ex.: \"lembre-me no Lembretes de pagar o boleto amanhã às 9h\".")]
+    quando, restante = extraido
+    titulo = re.sub(r"\b(lembr(?:e|a)(?:-| )?me|no lembretes|no reminders|no app de lembretes|lembretes do (mac|sistema)|de|para)\b", " ", restante, flags=re.IGNORECASE).strip(" ,.") or "Lembrete"
+    aprovacao_id = approvals.solicitar(
+        tipo_acao="criar_lembrete_reminders",
+        resumo=f"Criar lembrete no app Lembretes para {quando.astimezone().strftime('%d/%m/%Y %H:%M')}.",
+        conteudo=titulo,
+        params={"titulo": titulo, "quando_utc": quando.isoformat()},
+    )
+    return [Mensagem(
+        f"Lembrete pronto para o app **Lembretes**:\n· {titulo}\n· Para: {quando.astimezone().strftime('%d/%m/%Y %H:%M')}\n\n"
+        f"Responda **aprovar {aprovacao_id}** para gravar (hash registrado)."
+    )]
+
+
+def _agenda(texto: str) -> list[Mensagem] | None:
+    """Evento no Calendário do macOS (com aprovação)."""
+    n = _norm(texto)
+    if not re.search(r"\b(agende|marqu?e|marcar|no calendario|calendario|evento|reuniao)\b", n):
+        return None
+    if not re.search(r"\b(agende|marqu?e|marcar)\b", n) and "calendario" not in n:
+        return None
+    extraido = interpretar_quando(texto)
+    if extraido is None:
+        return [Mensagem("Quando? Ex.: \"agende reunião com o cliente amanhã às 14h\" "
+                         "ou \"marque no calendário dentista dia 25/10 às 9h\".")]
+    quando, restante = extraido
+    titulo = re.sub(
+        r"\b(agende|marqu?e|marcar|no calendario|calendario|um|uma)\b", " ",
+        restante, flags=re.IGNORECASE,
+    )
+    titulo = re.sub(r"\s+", " ", titulo).strip(" ,.") or "Evento"
+    aprovacao_id = approvals.solicitar(
+        tipo_acao="criar_evento_calendar",
+        resumo=f"Criar evento no Calendário: “{titulo}” em {quando.astimezone().strftime('%d/%m/%Y %H:%M')} (1h).",
+        conteudo=f"{titulo} — {quando.astimezone().strftime('%d/%m/%Y %H:%M')}",
+        params={"titulo": titulo, "inicio_utc": quando.isoformat(), "duracao_min": 60},
+    )
+    return [Mensagem(
+        f"Evento pronto para o **Calendário**:\n· {titulo}\n· {quando.astimezone().strftime('%d/%m/%Y %H:%M')} (1h)\n\n"
+        f"Responda **aprovar {aprovacao_id}** para gravar (hash registrado)."
+    )]
+
+
+def _email_chat(texto: str) -> list[Mensagem] | None:
+    """Enviar e-mail de verdade pelo Mail (com aprovação do conteúdo)."""
+    m = re.search(
+        r"\benvie\s+(?:um\s+)?e-?mail\s+para\s+([\w.+-]+@[\w.-]+)"
+        r"(?:\s+com\s+(?:o\s+)?assunto\s+([^:,]+?))?"
+        r"(?:\s+(?:dizendo|com\s+o\s+texto|escrevendo)|:)\s*([^'].*)$",
+        texto, re.IGNORECASE,
+    )
+    if not m:
+        m2 = re.search(r"\benvie\s+(?:um\s+)?e-?mail\s+para\s+([\w.+-]+@[\w.-]+)\s*$", texto, re.IGNORECASE)
+        if not m2:
+            return None
+        return [Mensagem("O que devo escrever? Ex.: \"envie e-mail para foo@bar.com com assunto Proposta dizendo: Olá…\"")]
+    para, assunto, corpo = m.group(1).strip(), (m.group(2) or "Contato").strip(), m.group(3).lstrip(":").strip()
+    aprovacao_id = approvals.solicitar(
+        tipo_acao="enviar_email_mail",
+        resumo=f"ENVIAR e-mail real para {para} com assunto “{assunto}”. Ao aprovar, sai da sua caixa.",
+        conteudo=corpo,
+        params={"destinatario": para, "assunto": assunto},
+    )
+    return [Mensagem(
+        f"E-mail pronto para **ENVIAR de verdade**:\n· Para: {para}\n· Assunto: {assunto}\n\n{corpo}\n\n"
+        f"Responda **aprovar {aprovacao_id}** para enviar (hash registrado). Negar cancela."
+    )]
+
 
 
 def _buscar_info(texto: str) -> list[Mensagem] | None:

@@ -74,6 +74,9 @@ Você: quanto é 15% de 240        → 36
 Você: cotação do dólar           → R$ 5,017 (fonte pública, hoje)
 Você: clima em Campinas          → 23,2°C, céu limpo (Open-Meteo)
 Você: lembre-me de ligar para o João em 30 minutos  → aviso neste chat
+Você: lembre-me no Lembretes de pagar o boleto amanhã às 9h  → app Lembretes
+Você: agende reunião com o investidor amanhã às 14h  → evento no Calendário
+Você: envia... envie e-mail para cliente@x.com com assunto Proposta dizendo: Olá  → envia de verdade (com aprovação)
 Você: anote: reunião na sexta às 14h  → grava no Notes após aprovação
 ```
 

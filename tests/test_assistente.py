@@ -211,3 +211,72 @@ def test_icp_extracao_limpa_para_frases_com_qualificador(banco_tmp):
     assert "casa" not in termos            # não vira segmento genérico
     assert "no santa casa" not in termos   # preposição limpa no critério palavra-chave
     assert any("santa casa" in t for t in termos)  # mas o hospital fica como palavra-chave
+
+
+def test_lembrete_no_app_lembretes_cria_aprovacao(banco_tmp, monkeypatch):
+    from app.engine import approvals
+
+    scripts = []
+    monkeypatch.setattr(approvals.macos_apps, "executar_osascript", lambda script, timeout_s=25: scripts.append(script) or "ok")
+
+    r = chatbot.responder("lembre-me no Lembretes de pagar o boleto amanhã às 9h")
+    assert "Lembretes" in r[0].texto and "aprovar" in r[0].texto.lower()
+    aprovacao = db.listar("aprovacao", where="tipo_acao = 'criar_lembrete_reminders'")[0]
+    params = db.de_json(aprovacao["params_json"])
+    assert "pagar o boleto" in params["titulo"]
+    assert db.de_json(aprovacao["params_json"])["quando_utc"]
+
+    # aprovar executa o AppleScript do Reminders com as propriedades certas
+    approvals.decidir(aprovacao["id"], aprovar=True)
+    assert aguardar(lambda: db.buscar_um("aprovacao", aprovacao["id"])["estado"] == "executada")
+    assert any("Reminders" in s and "pagar o boleto" in s and "due date" in s for s in scripts)
+
+
+def test_agenda_calendario_cria_aprovacao_e_executa(banco_tmp, monkeypatch):
+    from app.engine import approvals
+
+    scripts = []
+    monkeypatch.setattr(approvals.macos_apps, "executar_osascript", lambda script, timeout_s=25: scripts.append(script) or "ok")
+
+    r = chatbot.responder("agende reunião com o cliente amanhã às 14h")
+    assert "Calendário" in r[0].texto and "14:00" in r[0].texto
+    aprovacao = db.listar("aprovacao", where="tipo_acao = 'criar_evento_calendar'")[0]
+    params = db.de_json(aprovacao["params_json"])
+    assert "reunião com o cliente" in params["titulo"].lower()
+
+    approvals.decidir(aprovacao["id"], aprovar=True)
+    assert aguardar(lambda: db.buscar_um("aprovacao", aprovacao["id"])["estado"] == "executada")
+    assert any("Calendar" in s and "make new event" in s and "reuni" in s.lower() for s in scripts)
+
+
+def test_email_real_pelo_chat_com_aprovacao(banco_tmp, monkeypatch):
+    from app.engine import approvals
+
+    enviados = []
+    monkeypatch.setattr(approvals.macos_apps, "mail_enviar_email",
+                        lambda para, assunto, corpo: enviados.append((para, assunto, corpo)) or {"enviado": True})
+
+    r = chatbot.responder("envie e-mail para cliente@x.com com assunto Proposta dizendo: Segue a proposta em anexo.")
+    assert "ENVIAR" in r[0].texto.upper() and "cliente@x.com" in r[0].texto
+    aprovacao = db.listar("aprovacao", where="tipo_acao = 'enviar_email_mail'")[0]
+    assert aprovacao["conteudo"] == "Segue a proposta em anexo."
+
+    approvals.decidir(aprovacao["id"], aprovar=True)
+    assert aguardar(lambda: db.buscar_um("aprovacao", aprovacao["id"])["estado"] == "executada")
+    assert enviados == [("cliente@x.com", "Proposta", "Segue a proposta em anexo.")]
+
+
+def test_interpretar_quando_formatos():
+    from datetime import datetime
+
+    from app.engine.assistente import interpretar_quando
+
+    base = datetime(2026, 10, 20, 10, 0)
+    quando, resto = interpretar_quando("reunião amanhã às 14h", base)
+    assert (quando.day, quando.hour, quando.minute) == (21, 14, 0) and "amanhã" not in resto
+    quando, resto = interpretar_quando("dentista dia 25/10 às 9h30", base)
+    assert (quando.day, quando.month, quando.hour, quando.minute) == (25, 10, 9, 30)
+    quando, resto = interpretar_quando("ligar em 30 minutos", base)
+    assert (quando - base).total_seconds() == 1800
+    quando, resto = interpretar_quando("reunião sexta às 10h", base)  # 20/10/2026 é terça
+    assert quando.weekday() == 4 and quando.day == 23

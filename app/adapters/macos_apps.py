@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+from datetime import datetime
 
 from .. import db
 
@@ -102,6 +103,49 @@ def mail_enviar_email(para: str, assunto: str, corpo: str) -> dict:
     resultado = executar_osascript(script, timeout_s=40)
     db.registrar_auditoria("agente", "macos_mail_enviar_email", {"assunto": assunto, "para": para, "id_mensagem": resultado})
     return {"id": resultado, "assunto": assunto, "para": para, "enviado": True}
+
+
+def _data_apple(quando: datetime) -> str:
+    """Delta em minutos a partir de agora — evita literais de data sensíveis a locale."""
+    delta_min = round((quando - datetime.now()).total_seconds() / 60)
+    if delta_min < 1:
+        delta_min = 1
+    return f"((current date) + {delta_min} * minutes)"
+
+
+def reminders_criar(titulo: str, quando: datetime, corpo: str = "") -> dict:
+    """Cria um lembrete no app Lembretes (Reminders) para o horário indicado."""
+    corpo_props = f', body:"{_escapar(corpo)}"' if corpo else ""
+    script = (
+        'tell application "Reminders"\n'
+        f'    make new reminder with properties {{name:"{_escapar(titulo)}"{corpo_props}, due date:{_data_apple(quando)}}}\n'
+        "    return name of it\n"
+        "end tell"
+    )
+    resultado = executar_osascript(script)
+    db.registrar_auditoria("agente", "macos_reminders_criar", {"titulo": titulo, "quando": quando.isoformat()})
+    return {"titulo": titulo, "quando": quando.isoformat()}
+
+
+def calendar_criar_evento(titulo: str, inicio: datetime, duracao_min: int = 60, local: str = "") -> dict:
+    """Cria um evento no Calendário do macOS (primeiro calendário gravável)."""
+    delta_inicio = round((inicio - datetime.now()).total_seconds() / 60)
+    if delta_inicio < 1:
+        delta_inicio = 1
+    local_props = f', location:"{_escapar(local)}"' if local else ""
+    script = (
+        'tell application "Calendar"\n'
+        "    set inicio to (current date) + " + str(delta_inicio) + " * minutes\n"
+        "    set fim to inicio + " + str(int(duracao_min)) + " * minutes\n"
+        f'    make new event at end of events of calendar 1 with properties {{summary:"{_escapar(titulo)}", start date:inicio, end date:fim{local_props}}}\n'
+        "    return summary of it\n"
+        "end tell"
+    )
+    resultado = executar_osascript(script)
+    db.registrar_auditoria("agente", "macos_calendar_criar_evento", {
+        "titulo": titulo, "inicio": inicio.isoformat(), "duracao_min": duracao_min,
+    })
+    return {"titulo": titulo, "inicio": inicio.isoformat(), "duracao_min": duracao_min}
 
 
 def extrair_id_resultado(saida: str) -> str:

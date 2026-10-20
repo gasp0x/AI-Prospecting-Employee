@@ -13,6 +13,7 @@ Estados: pendente → aprovada → executada  |  pendente → negada
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime
 
 from .. import db
 from ..adapters import macos_apps
@@ -106,6 +107,15 @@ def _executar_aprovada(ctx, params: dict) -> dict:
         rascunho_id = extras.get("rascunho_id")
         if rascunho_id:
             db.atualizar("rascunho", int(rascunho_id), {"aprovacao_id": aprovacao_id})
+    elif tipo == "criar_lembrete_reminders":
+        quando = datetime.fromisoformat(extras["quando_utc"])
+        resultado = macos_apps.reminders_criar(extras.get("titulo", "Lembrete"), quando, conteudo)
+    elif tipo == "criar_evento_calendar":
+        inicio = datetime.fromisoformat(extras["inicio_utc"])
+        resultado = macos_apps.calendar_criar_evento(
+            extras.get("titulo", "Evento"), inicio, int(extras.get("duracao_min", 60)),
+            extras.get("local", ""),
+        )
     elif tipo == "enviar_email_mail":
         destinatario = (extras.get("destinatario") or "").strip()
         if not destinatario:

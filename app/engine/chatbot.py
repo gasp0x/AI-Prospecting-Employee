@@ -53,6 +53,11 @@ def responder(texto: str) -> list[Mensagem]:
     if re.search(r"\b(navegador|extensao|whatsapp do chrome|aba autenticada)\b", n):
         return [_navegador()]
 
+    if re.search(r"\benvie\b", n):
+        respostas_email = assistente.tentar(texto)
+        if respostas_email is not None:
+            return respostas_email
+
     m_rascunho = re.search(r"\b(?:rascunho|mensagem|escrever?|abordagem|email?|e-mail)\s+(?:para|pra|da|do)\s+(.{3,80})$", n)
     if m_rascunho:
         return _rascunho(m_rascunho.group(1))
@@ -84,7 +89,10 @@ def _ajuda() -> Mensagem:
         "🧮 **Cálculos** — \"quanto é 15% de 240\" · \"calcula 12*7+3\"\n"
         "💰 **Cotações** — \"cotação do dólar\"\n"
         "🌤 **Clima** — \"clima em Campinas\"\n"
-        "⏰ **Lembretes** — \"lembre-me de ligar para o João em 30 minutos\" (aviso neste chat) · \"meus lembretes\"\n"
+        "⏰ **Lembretes** — \"lembre-me de ligar para o João em 30 minutos\" (aviso neste chat)\n"
+        "   ou no app do Mac: \"lembre-me no Lembretes de pagar o boleto amanhã às 9h\" · \"meus lembretes\"\n"
+        "📅 **Calendário** — \"agende reunião com o cliente amanhã às 14h\" · \"marque dentista dia 25/10 às 9h\"\n"
+        "📧 **E-mail real** — \"envie e-mail para foo@bar.com com assunto X dizendo: corpo…\" (aprovação obrigatória)\n"
         "📝 **Anotações** — \"anote: reunião com o cliente na sexta\" (grava no Apple Notes após aprovar)\n"
         "🌐 **Resumos** — \"resume https://exemplo.com.br\" (extrativo) · \"abra github\"\n"
         "💬 **Perguntas abertas** — com um LLM configurado no `.env`, respondo o que você precisar\n\n"
