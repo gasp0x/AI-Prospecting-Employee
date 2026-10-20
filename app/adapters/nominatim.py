@@ -86,6 +86,7 @@ def buscar(consulta: str, limite: int = 12, somente_brasil: bool = True) -> list
         uf = _campo_endereco(item, ("state",))
         extra = item.get("extratags") or {}
         site = extra.get("website") or extra.get("contact:website") or None
+        telefone = extra.get("phone") or extra.get("contact:phone") or extra.get("contact:mobile") or None
         nome = item.get("name") or partes[0]
         if not nome:
             continue
@@ -100,6 +101,7 @@ def buscar(consulta: str, limite: int = 12, somente_brasil: bool = True) -> list
                 "localizacao": exibicao,
                 "categoria": item.get("type") or classe or None,
                 "site": site,
+                "telefone": telefone,
                 "fonte_url": f"https://www.openstreetmap.org/{tipo}/{id_osm}",
                 "lat": item.get("lat"),
                 "lon": item.get("lon"),

@@ -105,3 +105,53 @@ def test_prospeccao_continua_funcionando_apos_assistente(banco_tmp, monkeypatch)
     r = chatbot.responder("procure dentistas em Curitiba (PR)")
     assert any("iniciada" in x.texto for x in r)
     assert aguardar(lambda: True)  # sanidade
+
+
+def test_buscar_info_estabelecimento_por_nome_e_cidade(banco_tmp, monkeypatch):
+    from app.adapters import nominatim
+
+    candidatos = [{
+        "chave": "node/1", "nome": "Tony Veículos",
+        "endereco": "Av. São João 1000, São José dos Campos, SP",
+        "cidade": "São José dos Campos", "uf": "SP", "localizacao": "São José dos Campos/SP",
+        "categoria": "car_dealer", "site": None, "telefone": "(12) 3232-0000",
+        "fonte_url": "https://www.openstreetmap.org/node/1", "lat": None, "lon": None,
+    }]
+    monkeypatch.setattr(nominatim, "buscar", lambda consulta, limite=6, somente_brasil=True: candidatos)
+
+    pergunta = ('me dê algumas informações, como endereço e numero de telefone das lojas '
+                '"tony veiculos" na cidade de São José dos Campos')
+    r = chatbot.responder(pergunta)
+    assert "Tony Veículos" in r[0].texto
+    assert "Av. São João 1000" in r[0].texto
+    assert "(12) 3232-0000" in r[0].texto
+    assert "openstreetmap.org" in r[0].texto
+
+
+def test_buscar_info_sem_resultado_e_honesto(banco_tmp, monkeypatch):
+    from app.adapters import nominatim
+
+    monkeypatch.setattr(nominatim, "buscar", lambda consulta, limite=6, somente_brasil=True: [])
+    r = chatbot.responder('telefone das lojas "zezin motos" em Sorocaba')
+    assert "não encontrei" in r[0].texto.lower()
+    assert "ausência na base pública" in r[0].texto.lower()
+
+
+def test_buscar_info_enriquece_com_telefone_do_site(banco_tmp, monkeypatch):
+    from app.adapters import nominatim
+    from app.adapters.sites import ResultadoColeta
+
+    candidatos = [{
+        "chave": "node/2", "nome": "Clinica Beta",
+        "endereco": "Rua Y, 20, Campinas, SP", "cidade": "Campinas", "uf": "SP",
+        "localizacao": "Campinas/SP", "categoria": "clinic", "site": "https://beta.com.br",
+        "telefone": None, "fonte_url": "https://www.openstreetmap.org/node/2", "lat": None, "lon": None,
+    }]
+    monkeypatch.setattr(nominatim, "buscar", lambda consulta, limite=6, somente_brasil=True: candidatos)
+    html = ("<html><head><title>Beta</title></head><body>Contato (19) 99999-8888 "
+            "contato@beta.com.br</body></html>")
+    monkeypatch.setattr(assistente.sites, "coletar_site",
+                        lambda url: ResultadoColeta(url=url, url_final=url, estado="ok", html=html))
+    r = chatbot.responder("informações da clinica beta em campinas")
+    assert "(19) 99999-8888" in r[0].texto
+    assert "contato@beta.com.br" in r[0].texto

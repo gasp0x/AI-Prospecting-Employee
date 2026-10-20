@@ -80,7 +80,7 @@ def verificar_lembretes() -> list[db.sqlite3.Row]:
 def tentar(texto: str) -> list[Mensagem] | None:
     """Tenta as habilidades determinísticas; None = não é comando conhecido."""
     for handler in (_hora_data, _calculo, _cotacao, _clima, _lembrete_criar,
-                    _lembrete_listar, _resumir_url, _abrir_site, _anotar):
+                    _lembrete_listar, _buscar_info, _resumir_url, _abrir_site, _anotar):
         try:
             resposta = handler(texto)
         except Exception as erro:  # noqa: BLE001 — habilidade falhou; tenta a próxima
@@ -263,6 +263,95 @@ def _lembrete_listar(texto: str) -> list[Mensagem] | None:
         return [Mensagem("Nenhum lembrete ativo.")]
     linhas = [f"· #{l['id']} {l['quando_utc']} — {l['texto']}" for l in pendentes]
     return [Mensagem("Lembretes ativos:\n" + "\n".join(linhas))]
+
+
+def _buscar_info(texto: str) -> list[Mensagem] | None:
+    """Consulta direta: endereço/telefone/site de estabelecimentos por nome + cidade.
+
+    Fonte: OpenStreetMap/Nominatim (estabelecimentos reais); enriquece com a
+    página oficial (telefone/e-mail extraídos dela) quando existe. Nada inventado:
+    o que a fonte não tem, aparece como ausente.
+    """
+    n = _norm(texto)
+    if not re.search(r"\b(informacoes|endereco|telefone|dados|onde fica|contatos?)\b", n):
+        return None
+
+    alvo = None
+    cidade = None
+    m_cidade = re.search(r"(?:na cidade de|em|na|no)\s+([\wà-úÀ-Ú\s]+?)\s*$", texto, re.IGNORECASE)
+    if m_cidade:
+        cidade = m_cidade.group(1).strip()
+    m_aspas = re.search(r'["“]([^"”]{2,60})["”]', texto)
+    if m_aspas:
+        alvo = m_aspas.group(1).strip()
+    else:
+        m_alvo = re.search(
+            r"\b(?:informacoes|endereco|telefone|dados|contatos?)\b\s*"
+            r"(?:como\s+endereco\s+e\s+numero\s+de\s+telefone\s+)?"
+            r"(?:das?|dos?|de|da)\s+(?:as\s+|os\s+)?"
+            r"(?:lojas?|empresas?|clinicas?|escritorios?|academias?|oficinas?|restaurantes?|padarias?|concessionarias?)?\s*"
+            r"(.+?)(?:\s+(?:na|no|em)\s+(?:cidade\s+de\s+)?[\w\s]+)?$",
+            n, re.IGNORECASE,
+        )
+        if m_alvo and m_alvo.group(1).strip():
+            alvo = m_alvo.group(1).strip()
+    if not alvo or len(alvo) < 2:
+        return None
+
+    consulta = f"{alvo} {cidade}".strip() if cidade else alvo
+    from ..adapters import nominatim
+
+    try:
+        candidatos = nominatim.buscar(consulta, limite=6)
+    except nominatim.FonteBloqueada as erro:
+        return [Mensagem(f"A fonte pública (OpenStreetMap) bloqueou a consulta: {erro}. Tente de novo em instantes.")]
+    except httpx.HTTPError as erro:
+        return [Mensagem(f"Fonte pública indisponível agora ({type(erro).__name__}). Tente de novo em instantes.")]
+
+    if not candidatos:
+        return [Mensagem(
+            f"Não encontrei estabelecimentos com “{alvo}”"
+            + (f" em {cidade}" if cidade else "")
+            + " no OpenStreetMap. Isso significa ausência na base pública — não que não exista. "
+              "Posso tentar uma pesquisa completa se você disser: procure " + alvo + " em " + (cidade or "sua cidade") + "."
+        )]
+
+    blocos = []
+    for c in candidatos[:4]:
+        telefone = c.get("telefone")
+        site = c.get("site")
+        enriquecido = ""
+        if site:
+            try:
+                resultado = sites.coletar_site(site)
+                if resultado.estado == "ok":
+                    from ..engine.evidence import extrair_pagina
+
+                    pagina = extrair_pagina(resultado.url_final, resultado.html)
+                    extras = []
+                    if pagina.telefones:
+                        extras.append(f"telefone na página: {pagina.telefones[0]}")
+                    if pagina.emails:
+                        extras.append(f"e-mail: {pagina.emails[0]}")
+                    if extras:
+                        enriquecido = "\n   · " + " · ".join(extras)
+            except Exception:
+                enriquecido = ""
+        bloco = (
+            f"**{c['nome']}**\n"
+            f"   · Endereço: {c['endereco']}\n"
+            f"   · Telefone: {telefone or 'não registrado na fonte'}{enriquecido}\n"
+            f"   · Site: {site or 'não registrado na fonte'}\n"
+            f"   · Fonte: {c['fonte_url']} (coletado agora)"
+        )
+        blocos.append(bloco)
+
+    return [Mensagem(
+        f"Encontrei {len(blocos)} resultado(s) para “{alvo}”"
+        + (f" em {cidade}" if cidade else "")
+        + " (fonte: OpenStreetMap — telefones só aparecem se a fonte tiver):\n\n"
+        + "\n\n".join(blocos)
+    )]
 
 
 def _resumir_url(texto: str) -> list[Mensagem] | None:
