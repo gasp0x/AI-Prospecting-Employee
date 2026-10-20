@@ -51,6 +51,15 @@ def test_busca_web_todos_os_motores_bloqueados(banco_tmp, monkeypatch):
         websearch.buscar("qualquer consulta")
 
 
+def test_todas_as_fontes_bloqueadas(banco_tmp, monkeypatch):
+    def fake_curl(metodo, url, dados=None, timeout_s=None):
+        return 403, "captcha challenge"
+
+    monkeypatch.setattr(websearch, "_curl", fake_curl)
+    with pytest.raises(websearch.BuscaBloqueada):
+        websearch.buscar_detalhado("qualquer consulta", limite=5)
+
+
 def test_ddg_bloqueado_cai_para_brave(banco_tmp, monkeypatch):
     """NordVPN ativa: DDG bloqueia (202), Brave responde com resultados orgânicos."""
     pagina_anomalia = "<html><title>Captcha</title><body>anomaly detection</body></html>"
@@ -176,3 +185,37 @@ def test_dominio_corresponde_ao_nome():
 def test_dominio_de_normaliza_www():
     assert dominio_de("https://www.clinica.com.br/contato") == "clinica.com.br"
     assert dominio_de("nao e url") in (None, "")
+
+
+def test_fontes_rss_e_wikipedia_na_cadeia(banco_tmp, monkeypatch):
+    """Com Brave/DDG bloqueados, o Bing RSS responde na cadeia expandida."""
+    websearch.reset_cooldown()
+
+    def fake_curl(metodo, url, dados=None, timeout_s=None):
+        if "duckduckgo" in url:
+            return 202, "<html>anomaly captcha</html>"  # DDG bloqueado (fixture real)
+        if "brave" in url:
+            return 403, "captcha challenge"  # Brave bloqueado
+        if "bing.com" in url:
+            return 200, ("<rss><item><title>OLX Carros</title>"
+                         "<link>https://www.olx.com.br/carros</link></item></rss>")
+        return 403, "captcha challenge"  # demais fontes bloqueadas
+
+    monkeypatch.setattr(websearch, "_curl", fake_curl)
+    urls = [r["url"] for r in websearch.buscar_detalhado("carros de luxo sjc", limite=5)]
+    assert "https://www.olx.com.br/carros" in urls
+    websearch.reset_cooldown()
+
+
+def test_wikipedia_na_cadeia(banco_tmp, monkeypatch):
+    websearch.reset_cooldown()
+    json_wiki = '{"query": {"search": [{"title": "Cardiologia"}, {"title": "Roberto Kalil Filho"}]}}'
+
+    def fake_curl(metodo, url, dados=None, timeout_s=None):
+        if "wikipedia" in url:
+            return 200, json_wiki
+        return 403, "captcha challenge"
+
+    monkeypatch.setattr(websearch, "_curl", fake_curl)
+    rs = websearch.buscar_detalhado("cardiologia", limite=3)
+    assert any("Cardiologia" in r["titulo"] for r in rs)

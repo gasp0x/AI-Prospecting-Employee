@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import ast
 import re
+import subprocess
 import threading
 import time
 import unicodedata
@@ -79,9 +80,67 @@ def verificar_lembretes() -> list[db.sqlite3.Row]:
 
 # ---------- habilidades ----------
 
+
+
+# ---------- abrir aplicativos do sistema (open -a do macOS) ----------
+
+_APPS_CONHECIDOS = {
+    "calendario": "Calendar", "calendar": "Calendar",
+    "mail": "Mail", "email": "Mail",
+    "lembretes": "Reminders", "reminders": "Reminders",
+    "notas": "Notes", "notes": "Notes",
+    "contatos": "Contacts", "contacts": "Contacts",
+    "safari": "Safari",
+    "chrome": "Google Chrome", "google chrome": "Google Chrome",
+    "edge": "Microsoft Edge", "firefox": "Firefox", "brave": "Brave Browser",
+    "calculadora": "Calculator", "calculator": "Calculator",
+    "mapas": "Maps", "maps": "Maps",
+    "musica": "Music", "music": "Music",
+    "fotos": "Photos", "photos": "Photos",
+    "mensagens": "Messages", "messages": "Messages",
+    "telegram": "Telegram", "whatsapp": "WhatsApp",
+    "spotify": "Spotify",
+    "terminal": "Terminal",
+    "vscode": "Visual Studio Code", "visual studio code": "Visual Studio Code",
+    "visualizador": "Preview", "preview": "Preview",
+    "configuracoes": "System Settings", "system settings": "System Settings",
+    "dicionario": "Dictionary",
+    "lembretes app": "Reminders",
+}
+
+
+def _abrir_app(texto: str) -> list[Mensagem] | None:
+    """Abre um aplicativo do macOS: "abra o calendário", "abra o mail"…"""
+    m = re.match(r"\s*abr[aei]r?\s+(.+)$", texto.strip(), re.IGNORECASE)
+    if not m:
+        return None
+    resto = _norm(m.group(1))
+    # remove artigos e "app"
+    resto = re.sub(r"\b(o|a|os|as|meu|minha|app|aplicativo|programa)\b", " ", resto)
+    resto = re.sub(r"\s+", " ", resto).strip()
+    # corta justificativas: "abra o calendário pra eu agendar…" → "calendario"
+    resto = re.split(r"\b(pra|para|poder|que|e depois|assim)\b", resto)[0].strip()
+    app = _APPS_CONHECIDOS.get(resto)
+    if not app:
+        return None
+    try:
+        subprocess.run(["open", "-a", app], check=True, timeout=15)
+    except (subprocess.SubprocessError, OSError) as erro:
+        return [Mensagem(f"Não consegui abrir o {app}: {erro}")]
+    dicas = {
+        "Calendar": "Para eu mesmo agendar: \"agende reunião com X amanhã às 14h\".",
+        "Reminders": "Para eu criar lembretes: \"lembre-me no Lembretes de pagar o boleto amanhã às 9h\".",
+        "Mail": "Para eu enviar: \"envie e-mail para foo@bar.com com assunto X dizendo: corpo\".",
+    }
+    dica = dicas.get(app)
+    extra = f"\n\n{dica}" if dica else ""
+    return [Mensagem(f"✅ Abri o **{app}**.{extra}")]
+
+
+
 def tentar(texto: str) -> list[Mensagem] | None:
     """Tenta as habilidades determinísticas; None = não é comando conhecido."""
-    for handler in (_hora_data, _calculo, _cotacao, _clima, _lembrete_sistema, _agenda,
+    for handler in (_abrir_app, _hora_data, _calculo, _cotacao, _clima, _lembrete_sistema, _agenda,
                     _email_chat, _lembrete_criar, _lembrete_listar, lista_nomes, _buscar_info,
                     _resumir_url, _abrir_site, _anotar):
         try:

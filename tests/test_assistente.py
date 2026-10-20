@@ -12,10 +12,17 @@ def test_calculo_porcentagem_e_expressao(banco_tmp):
     assert chatbot.responder("calcula delete from usuarios") == [] or "erro" not in r[0].texto.lower()
 
 
-def test_calculo_rejeita_codigo(banco_tmp):
+def test_calculo_rejeita_codigo(banco_tmp, monkeypatch):
+    from app.adapters.websearch import BuscaBloqueada
+
+    def bloqueada(consulta, limite=6):
+        raise BuscaBloqueada("motores bloqueados")
+
+    monkeypatch.setattr(assistente.websearch, "buscar_detalhado", bloqueada)
     r = chatbot.responder("calcula __import__('os').system('ls')")
-    # não executa nada: cai no fluxo honesto de pergunta aberta
-    assert len(r) == 1 and "__import__" not in r[0].texto
+    # a calculadora NÃO avalia o código: ele vira busca na web (texto, sem execução)
+    assert len(r) == 1
+    assert "motores bloqueados" in r[0].texto  # falha honesta, sem execução de código
 
 
 def test_hora_e_data(banco_tmp):
@@ -361,3 +368,32 @@ def test_busca_geral_multi_fonte_com_enriquecimento(banco_tmp, monkeypatch):
     assert "No mapa (OpenStreetMap)" in texto and "Lux Car Automóveis" in texto
     assert any(a["rotulo"] == "🗺 Ver no Google Maps" for a in r[0].acoes)
     assert any("google.com/search" in a["url"] for a in r[0].acoes)
+
+
+def test_abrir_app_do_sistema(banco_tmp, monkeypatch):
+    chamados = []
+    def fake_run(cmd, **kwargs):
+        chamados.append(list(cmd))
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr(assistente.subprocess, "run", fake_run)
+
+    r = chatbot.responder("abra o calendario pra eu poder agendar uma reunião")
+    assert "Calendar" in r[0].texto
+    assert chamados == [["open", "-a", "Calendar"]]
+
+    r = chatbot.responder("abra o mail")
+    assert "Mail" in r[0].texto
+    assert ["open", "-a", "Mail"] == chamados[-1]
+
+    # app desconhecido → não é comando; cai no fluxo normal
+    r = chatbot.responder("abra o nonexistentissimo app")
+    assert r and "Calendar" not in r[0].texto
+
+
+def test_agenda_apos_abrir_calendario(banco_tmp, monkeypatch):
+    monkeypatch.setattr(assistente.subprocess, "run",
+                        lambda cmd, **k: type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})())
+    chatbot.responder("abra o calendario")
+    r = chatbot.responder("agende reunião com o investidor amanhã às 14h")
+    assert any("Calendário" in x.texto for x in r)

@@ -12,6 +12,7 @@ navegador do usuário via extensão). Nenhuma tentativa de evasão é feita.
 from __future__ import annotations
 
 import html as html_mod
+import json
 import re
 import subprocess
 import threading
@@ -29,6 +30,9 @@ _UA_NAVEGADOR = (
 )
 _URL_DDG = "https://html.duckduckgo.com/html/"
 _URL_BRAVE = "https://search.brave.com/search"
+_URL_BING_RSS = "https://www.bing.com/search"
+_URL_GNEWS_RSS = "https://news.google.com/rss/search"
+_URL_WIKIPEDIA = "https://pt.wikipedia.org/w/api.php"
 
 # resfriamento: motor bloqueado fica pausado por N segundos (evita martelar o limite)
 _COOLDOWN_S = 90
@@ -105,9 +109,9 @@ def _cache_guardar(chave: str, valor: list) -> None:
 
 
 def reset_cooldown() -> None:
-    """Limpa o resfriamento (usado em testes e útil para diagnóstico)."""
+    """Limpa o resfriamento de TODOS os motores (testes e diagnóstico)."""
     with _lock:
-        _bloqueio_ate.update({"duckduckgo": 0.0, "brave": 0.0})
+        _bloqueio_ate.clear()
 
 
 def buscar(consulta: str, limite: int = 8) -> list[str]:
@@ -141,13 +145,88 @@ def buscar(consulta: str, limite: int = 8) -> list[str]:
     raise BuscaBloqueada("; ".join(falhas))
 
 
+def _limpar_xml(valor: str) -> str:
+    return html_mod.unescape(re.sub(r"<!\[CDATA\[|\]\]>|<[^>]+>", "", valor)).strip()
+
+
+def _bing_rss_detalhado(consulta: str, limite: int) -> list[dict]:
+    """Bing via RSS (formato=rss) — tolerante a IPs de datacenter."""
+    status, corpo = _curl("GET", _URL_BING_RSS, {"q": consulta, "format": "rss"})
+    if _resposta_bloqueada(status, corpo):
+        raise BuscaBloqueada(f"HTTP {status} (anti-bot/CAPTCHA)")
+    if status >= 400:
+        raise BuscaBloqueada(f"HTTP {status}")
+
+    resultados: list[dict] = []
+    for m in re.finditer(r"<item>\s*<title>(.*?)</title>\s*<link>(.*?)</link>", corpo, re.DOTALL):
+        titulo, url = _limpar_xml(m.group(1)), _limpar_xml(m.group(2))
+        if url.startswith("http") and url not in {r["url"] for r in resultados}:
+            resultados.append({"url": url, "titulo": titulo[:140]})
+        if len(resultados) >= limite:
+            break
+    if not resultados:
+        raise BuscaBloqueada("RSS sem resultados (possível bloqueio)")
+    return resultados
+
+
+def _gnews_detalhado(consulta: str, limite: int) -> list[dict]:
+    """Google News via RSS — notícias e cobertura local."""
+    status, corpo = _curl(
+        "GET", _URL_GNEWS_RSS,
+        {"q": consulta, "hl": "pt-BR", "gl": "BR", "ceid": "BR:pt-419"},
+    )
+    if _resposta_bloqueada(status, corpo):
+        raise BuscaBloqueada(f"HTTP {status} (anti-bot/CAPTCHA)")
+    if status >= 400:
+        raise BuscaBloqueada(f"HTTP {status}")
+
+    resultados: list[dict] = []
+    for m in re.finditer(r"<item>\s*<title>(.*?)</title>\s*<link>(.*?)</link>", corpo, re.DOTALL):
+        titulo, url = _limpar_xml(m.group(1)), _limpar_xml(m.group(2))
+        if url.startswith("http") and url not in {r["url"] for r in resultados}:
+            resultados.append({"url": url, "titulo": titulo[:140]})
+        if len(resultados) >= limite:
+            break
+    if not resultados:
+        raise BuscaBloqueada("RSS sem resultados (possível bloqueio)")
+    return resultados
+
+
+def _wikipedia_detalhado(consulta: str, limite: int) -> list[dict]:
+    """Wikipédia (API aberta) — pessoas, conceitos e organizações."""
+    status, corpo = _curl(
+        "GET", _URL_WIKIPEDIA,
+        {"action": "query", "list": "search", "srsearch": consulta,
+         "srlimit": str(limite), "format": "json"},
+        timeout_s=settings.timeout_busca_s,
+    )
+    if status >= 400:
+        raise BuscaBloqueada(f"HTTP {status}")
+    try:
+        dados = json.loads(corpo)
+    except ValueError as erro:
+        raise BuscaBloqueada("resposta não-JSON") from erro
+
+    resultados: list[dict] = []
+    for item in dados.get("query", {}).get("search", []):
+        titulo = item.get("title", "")
+        url = "https://pt.wikipedia.org/wiki/" + titulo.replace(" ", "_")
+        if titulo and url not in {r["url"] for r in resultados}:
+            resultados.append({"url": url, "titulo": titulo[:140]})
+    if not resultados:
+        raise BuscaBloqueada("sem resultados")
+    return resultados
+
+
 def buscar_detalhado(consulta: str, limite: int = 6) -> list[dict]:
     """Resultados da web com título e URL (pessoas, profissionais, temas).
 
     Cadeia Brave → DuckDuckGo; levanta `BuscaBloqueada` se todos falharem.
     """
     falhas: list[str] = []
-    for nome, funcao in (("brave", _brave_detalhado), ("duckduckgo", _ddg_detalhado)):
+    for nome, funcao in (("brave", _brave_detalhado), ("duckduckgo", _ddg_detalhado),
+                         ("bing_rss", _bing_rss_detalhado), ("google_news", _gnews_detalhado),
+                         ("wikipedia", _wikipedia_detalhado)):
         if _em_cooldown(nome):
             falhas.append(f"{nome}: em resfriamento após bloqueio recente (tenta de novo em instantes)")
             continue

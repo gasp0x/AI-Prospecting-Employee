@@ -115,6 +115,7 @@ def _ajuda() -> Mensagem:
         "📝 **Anotações** — \"anote: reunião com o cliente na sexta\" (grava no Apple Notes após aprovar)\n"
         "🌐 **Resumos** — \"resume https://exemplo.com.br\" (extrativo) · \"abra github\"\n"
         "🔎 **Busca geral na web** — \"me dê nomes de cardiologistas no Santa Casa em SJC\", \"quem foi Machado de Assis?\"\n"
+        "🖥 **Abrir apps** — \"abra o calendário\", \"abra o mail\", \"abra o spotify\"\n"
         "💬 **Perguntas abertas** — com um LLM configurado no `.env`, respondo o que você precisar\n\n"
         "Regras que eu nunca quebro: só afirmo o que coletei de fontes reais (com URL e data) e "
         "nenhuma ação externa acontece sem sua aprovação com o conteúdo exato (SHA-256)."
