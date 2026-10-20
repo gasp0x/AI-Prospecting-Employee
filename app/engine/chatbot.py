@@ -54,10 +54,10 @@ def responder(texto: str) -> list[Mensagem]:
     if re.search(r"\b(navegador|extensao|whatsapp do chrome|aba autenticada)\b", n):
         return [_navegador()]
 
-    if re.search(r"\benvie\b", n):
-        respostas_email = assistente.tentar(texto)
-        if respostas_email is not None:
-            return respostas_email
+    # habilidades gerais do assistente (cálculo, clima, lembretes, nomes de profissionais…)
+    habilidades = assistente.tentar(texto)
+    if habilidades is not None:
+        return habilidades
 
     m_rascunho = re.search(r"\b(?:rascunho|mensagem|escrever?|abordagem|email?|e-mail)\s+(?:para|pra|da|do)\s+(.{3,80})$", n)
     if m_rascunho:
@@ -65,11 +65,6 @@ def responder(texto: str) -> list[Mensagem]:
 
     if re.search(r"\b(resultados?|empresas? (encontradas|achadas|qualificadas)|o que (voce|vc) (achou|encontrou)|lista|melhores)\b", n):
         return [_resultados()]
-
-    # habilidades gerais do assistente (cálculo, clima, cotações, lembretes, notas…)
-    habilidades = assistente.tentar(texto)
-    if habilidades is not None:
-        return habilidades
 
     # sinais de CONSULTA DE DADOS ("nomes de", "telefone", "endereço") → web sempre (não inventa)
     sinais_dados = bool(re.search(

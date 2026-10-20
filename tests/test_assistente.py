@@ -284,29 +284,54 @@ def test_interpretar_quando_formatos():
     assert quando.weekday() == 4 and quando.day == 23
 
 
-def test_busca_geral_para_pedidos_de_nomes(banco_tmp, monkeypatch):
-    """A frase exata que falhou duas vezes agora vai para a busca geral na web."""
+def test_lista_nomes_extrai_pessoas_das_paginas(banco_tmp, monkeypatch):
+    """A frase exata que falhou duas vezes: extrai NOMES das páginas da web."""
     consultas = []
 
     def fake_detalhado(consulta, limite=6):
         consultas.append(consulta)
-        return [{"url": "https://tuasaude.com/x", "titulo": "Cardiologistas que atendem Santa Casa SJC"}]
+        return [
+            {"url": "https://tuasaude.com/x", "titulo": "Médicos que atendem Santa Casa SJC"},
+            {"url": "https://santacasasjc.com.br/x", "titulo": "Cardiologia — corpo clínico"},
+        ]
 
     monkeypatch.setattr(assistente.websearch, "buscar_detalhado", fake_detalhado)
-    monkeypatch.setattr(assistente, "llm_disponivel", lambda: False)
 
-    frase = ('preciso que você me de nomes de cardiologistas que trabalham no '
-             '"Santa Casa" em São José dos Campos')
+    class FakeColeta:
+        estado = "ok"
+        detalhe = ""
+
+        def __init__(self, url):
+            self.url_final = url
+            self.html = ""
+
+    monkeypatch.setattr(assistente.sites, "coletar_site", lambda url: FakeColeta(url))
+    from app.engine.evidence import extrair_pagina as _real_extrair
+
+    class PaginaFake:
+        texto = "Equipe: Dr. Carlos Souza, Dr. Amit Batra e Dra. Ana Lima — cardiologia."
+        titulo = "x"
+        meta_description = ""
+
+    monkeypatch.setattr(assistente, "extrair_pagina", lambda u, h: PaginaFake())
+    import app.engine.chatbot as chatbot_mod
+    monkeypatch.setattr(chatbot_mod, "llm_disponivel", lambda: False)
+
+    frase = ('não quero sites para agendamentos, quero uma lista de nomes dos cardiologistas '
+             'que estão trabalhando no "santa casa" na cidade de São José dos Campos')
     r = chatbot.responder(frase)
-    # não foi para LLM nem para pesquisa de prospecção
+    # não foi para LLM, nem para pesquisa de prospecção, nem para "resultados" antigos
     assert "LLM" not in r[0].texto and "iniciada" not in r[0].texto
-    # foi para a web, com consulta limpa
-    assert len(consultas) == 1
-    assert "cardiologistas" in consultas[0].lower()
-    assert "santa casa" in consultas[0].lower()
-    assert "são josé" in consultas[0].lower()
-    assert not consultas[0].lower().startswith("de ")
-    assert "web" in r[0].texto.lower() and "tuasaude.com" in r[0].texto
+    assert "Melhores empresas" not in r[0].texto
+    # extraiu os nomes das páginas, com fonte
+    assert "Dr. Carlos Souza" in r[0].texto
+    assert "Dr. Amit Batra" in r[0].texto   # " e " não cola dois nomes
+    assert "Dra. Ana Lima" in r[0].texto
+    assert "tuasaude.com" in r[0].texto
+    # consulta limpa: sem cláusula negativa, sem "uma lista de"
+    assert not any("não quero" in c.lower() for c in consultas)
+    assert not any(c.lower().startswith("uma lista") for c in consultas)
+    assert any("cardiologistas" in c.lower() for c in consultas)
 
 
 def test_prospeccao_plural_de_negocio_continua_research(banco_tmp):

@@ -21,9 +21,11 @@ import webbrowser
 from datetime import datetime, timedelta, timezone
 
 import httpx
+from urllib.parse import urlparse
 
 from .. import db
 from ..adapters import sites, websearch
+from ..engine.evidence import extrair_pagina
 from ..config import settings
 from ..engine import approvals
 from .mensagens import Mensagem, registrar_agente
@@ -80,7 +82,7 @@ def verificar_lembretes() -> list[db.sqlite3.Row]:
 def tentar(texto: str) -> list[Mensagem] | None:
     """Tenta as habilidades determinísticas; None = não é comando conhecido."""
     for handler in (_hora_data, _calculo, _cotacao, _clima, _lembrete_sistema, _agenda,
-                    _email_chat, _lembrete_criar, _lembrete_listar, _buscar_info,
+                    _email_chat, _lembrete_criar, _lembrete_listar, lista_nomes, _buscar_info,
                     _resumir_url, _abrir_site, _anotar):
         try:
             resposta = handler(texto)
@@ -489,6 +491,7 @@ def _buscar_info(texto: str) -> list[Mensagem] | None:
         except websearch.BuscaBloqueada:
             web = []
         if web:
+            print(">>> ROTA: _buscar_info → web <<<", flush=True)
             linhas = [f"· **[{r['titulo'][:90]}]({r['url']})**" for r in web]
             return [Mensagem(
                 f"Não achei “{alvo}”"
@@ -513,8 +516,6 @@ def _buscar_info(texto: str) -> list[Mensagem] | None:
             try:
                 resultado = sites.coletar_site(site)
                 if resultado.estado == "ok":
-                    from ..engine.evidence import extrair_pagina
-
                     pagina = extrair_pagina(resultado.url_final, resultado.html)
                     extras = []
                     if pagina.telefones:
@@ -635,8 +636,102 @@ _PREENCHIMENTO = [
     r"\bme\s+d[êe]\b",
     r"^procure\s+", r"^ache\s+", r"^encontre\s+", r"^busque\s+", r"^busca\s+",
     r"^quais\s+(?:s[ãa]o\s+)?", r"^quem\s+(?:s[ãa]o|é|e)\s*",
+    r"^uma\s+lista\s+de\s+",
     r"^de\s+",
 ]
+
+# cláusula negativa: "não quero sites para agendamentos, quero X" → mantém X
+_PADRAO_NEGATIVA = re.compile(r"^\s*n[ãa]o\s+quero\b.*?\bquero\s+", re.IGNORECASE | re.DOTALL)
+
+
+def _limpar_consulta(texto: str) -> str:
+    """Remove preenchimento conversacional e cláusulas negativas ("não quero X, quero Y")."""
+    consulta = texto.strip().rstrip("?!. ")
+    consulta = _PADRAO_NEGATIVA.sub("", consulta)
+    for padrao in _PREENCHIMENTO:
+        consulta = re.sub(padrao, " ", consulta, flags=re.IGNORECASE).strip()
+    return re.sub(r"\s+", " ", consulta).strip()
+
+
+def extrair_nomes_pessoas(texto: str) -> list[str]:
+    """Extrai nomes de pessoas (Dr./Dra. + nome próprio) de um texto de página.
+
+    Heurística conservadora: apenas nomes com título Dr./Dra. — o suficiente
+    para diretórios médicos e páginas de clínicas; deduplicado.
+    """
+    nomes: list[str] = []
+    for m in re.finditer(
+        r"\b(Dr|Dra)\.?\s+([A-ZÀ-Ú][\wà-úÀ-Ú'’.-]+(?:\s+(?:de|da|do|dos|das)\s+[A-ZÀ-Ú][\wà-úÀ-Ú'’.-]+"
+        r"|\s+e\s+(?!Dra?\b)[A-ZÀ-Ú][\wà-úÀ-Ú'’.-]+|\s+[A-ZÀ-Ú][\wà-úÀ-Ú'’.-]+){0,3})",
+        texto,
+    ):
+        nome = f"{m.group(1)}. {m.group(2)}"
+        if nome not in nomes:
+            nomes.append(nome)
+    return nomes
+
+
+def lista_nomes(texto: str) -> list[Mensagem] | None:
+    """Lista de NOMES de pessoas/profissionais: busca, abre as páginas e extrai.
+
+    Ex.: "nomes dos cardiologistas que trabalham no Santa Casa em SJC".
+    Cada nome traz a fonte de onde foi extraído; se as páginas não expõem
+    nomes em texto (agendamento via JavaScript), diz com honestidade.
+    """
+    n = _norm(texto)
+    gatilho_pessoa = bool(re.search(
+        r"\b(nomes?|quem (s[ãa]o|trabalha|trabalham|atende|atendem)|lista de)\b", n
+    )) and bool(re.search(
+        r"\b(dras?\.?|medic[oa]s?|cardiologistas?|dentistas?|advogad[oa]s?|professores?|professoras?"
+        r"|profissionais?|especialistas?|pessoas?|engenheir[oa]s?|nutricionistas?|psic[óo]log[oa]s?"
+        r"|veterin[áa]ri[oa]s?|fisioterapeutas?|dermatologistas?|pediatras?)\b", n
+    ))
+    if not gatilho_pessoa:
+        return None
+    consulta = _limpar_consulta(texto)
+    if len(consulta) < 2:
+        return None
+
+    try:
+        resultados = websearch.buscar_detalhado(consulta, limite=5)
+    except websearch.BuscaBloqueada as erro:
+        return [Mensagem(
+            f"Os motores de busca estão bloqueando este IP agora ({erro}). "
+            "É temporário — tente de novo em alguns minutos. Registrei a limitação."
+        )]
+    if not resultados:
+        return [Mensagem(f"Sem resultados na web para “{consulta}”.")]
+
+    achados: list[str] = []
+    fontes_sem_nomes: list[str] = []
+    for r in resultados[:4]:
+        try:
+            coleta = sites.coletar_site(r["url"])
+        except Exception:  # noqa: BLE001
+            fontes_sem_nomes.append(r["url"])
+            continue
+        if coleta.estado != "ok":
+            fontes_sem_nomes.append(r["url"])
+            continue
+        pagina = extrair_pagina(coleta.url_final, coleta.html)
+        nomes = extrair_nomes_pessoas(r.get("titulo", "") + "\n" + pagina.texto)
+        if nomes:
+            achados.append(f"**Via {urlparse(coleta.url_final).netloc}** ({coleta.url_final}):\n"
+                           + "\n".join(f"· {n}" for n in nomes[:8]))
+        else:
+            fontes_sem_nomes.append(coleta.url_final)
+
+    if achados:
+        extra = (f"\n\nNomes não extraídos de {len(fontes_sem_nomes)} fonte(s) "
+                 f"(carregam via agendamento em JavaScript): {', '.join(fontes_sem_nomes)}") if fontes_sem_nomes else ""
+        return [Mensagem(
+            f"Nomes encontrados para “{consulta}”:\n\n" + "\n\n".join(achados) + extra
+        )]
+    return [Mensagem(
+        f"As páginas sobre “{consulta}” não expõem nomes em texto legível "
+        f"(a maioria usa agendamento em JavaScript). Abra-as diretamente:\n"
+        + "\n".join(f"· {u}" for u in fontes_sem_nomes[:5])
+    )]
 
 
 def busca_geral(texto: str) -> list[Mensagem]:
@@ -646,10 +741,7 @@ def busca_geral(texto: str) -> list[Mensagem]:
     Fonte: motores públicos (Brave → DuckDuckGo). Se bloquearem, diz com
     honestidade — nunca inventa.
     """
-    consulta = texto.strip().rstrip("?!. ")
-    for padrao in _PREENCHIMENTO:
-        consulta = re.sub(padrao, " ", consulta, flags=re.IGNORECASE).strip()
-    consulta = re.sub(r"\s+", " ", consulta).strip()
+    consulta = _limpar_consulta(texto)
     if len(consulta) < 2:
         consulta = texto.strip()
 
@@ -672,6 +764,7 @@ def busca_geral(texto: str) -> list[Mensagem]:
     if not resultados:
         return [Mensagem(f"Sem resultados na web para “{consulta}”.")]
 
+    print(">>> ROTA: busca_geral → web <<<", flush=True)
     linhas = [f"**[{i}. {r['titulo'][:90]}]({r['url']})**" for i, r in enumerate(resultados, 1)]
     return [Mensagem(
         f"Busca por “{consulta}” — resultados na **web** (fontes públicas, agora):\n\n"
