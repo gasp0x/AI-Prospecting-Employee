@@ -786,6 +786,48 @@ def _limpar_consulta(texto: str) -> str:
     return re.sub(r"\s+", " ", consulta).strip()
 
 
+
+
+_RE_NOME = re.compile(
+    r"\b(Dr|Dra)\.?\s+([A-ZÀ-Ú][\wà-úÀ-Ú'’.-]+(?:\s+(?:de|da|do|dos|das)\s+[A-ZÀ-Ú][\wà-úÀ-Ú'’.-]+"
+    r"|\s+e\s+(?!Dra?\b)[A-ZÀ-Ú][\wà-úÀ-Ú'’.-]+|\s+[A-ZÀ-Ú][\wà-úÀ-Ú'’.-]+){0,3})"
+)
+_RE_TELEFONE = re.compile(r"\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}")
+_RE_AVALIACAO = re.compile(
+    r"(?:avalia[çc][ãa]o|nota|\*)\s*[: ]*?(\d[.,]\d{1,2})"
+    r"|(\d[.,]\d{1,2})\s*(?:estrelas?|★|/ ?5|de 5)"
+)
+
+
+def extrair_pessoas_com_dados(texto: str) -> list[dict]:
+    """Pessoas (Dr./Dra.) com telefone e avaliação quando a fonte expõe no texto.
+
+    Cada pessoa recebe o telefone e a avaliação mais próximos (janela de 300
+    caracteres após o nome). Campos ausentes ficam None — nada é inventado.
+    """
+    pessoas: list[dict] = []
+    vistos: set[str] = set()
+    for m in _RE_NOME.finditer(texto):
+        nome = f"{m.group(1)}. {m.group(2)}"
+        chave = _norm(nome)
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        janela = texto[m.end(): m.end() + 300]
+        m_tel = _RE_TELEFONE.search(janela)
+        telefone = m_tel.group(0) if m_tel else None
+        avaliacao = None
+        m_av = _RE_AVALIACAO.search(janela)
+        if m_av:
+            avaliacao = (m_av.group(1) or m_av.group(2)).replace(",", ".")
+        pessoas.append({"nome": nome, "telefone": telefone, "avaliacao": avaliacao})
+    return pessoas
+
+
+def _limite_avaliacao(texto: str) -> float | None:
+    m = re.search(r"acima de\s*(\d[.,]?\d?)", texto, re.IGNORECASE)
+    return float(m.group(1).replace(",", ".")) if m else None
+
 def extrair_nomes_pessoas(texto: str) -> list[str]:
     """Extrai nomes de pessoas (Dr./Dra. + nome próprio) de um texto de página.
 
@@ -825,6 +867,23 @@ def lista_nomes(texto: str) -> list[Mensagem] | None:
     if len(consulta) < 2:
         return None
 
+    # consulta direcionada ao motor: profissão + cidade (as instruções de
+    # extração — "nomes e telefone", "acima de 8,0" — são aplicadas AQUI,
+    # não vão para o motor de busca)
+    m_prof = re.search(
+        r"\b(dras?\.?|medic[oa]s?|cardiologistas?|dentistas?|advogad[oa]s?|professores?"
+        r"|profissionais?|especialistas?|engenheir[oa]s?|nutricionistas?|psic[óo]log[oa]s?"
+        r"|veterin[áa]ri[oa]s?|fisioterapeutas?|dermatologistas?|pediatras?)\b",
+        consulta, re.IGNORECASE,
+    )
+    profissao = m_prof.group(1) if m_prof else None
+    cidade_busca = None
+    m_cid = re.search(r"\bem\s+([\wà-úÀ-Ú][\wà-úÀ-Ú\s]*?)\s*$", consulta, re.IGNORECASE)
+    if m_cid:
+        cidade_busca = m_cid.group(1).strip()
+    if profissao and cidade_busca:
+        consulta = f"{profissao} {cidade_busca}"
+
     try:
         resultados = websearch.buscar_detalhado(consulta, limite=5)
     except websearch.BuscaBloqueada as erro:
@@ -835,8 +894,10 @@ def lista_nomes(texto: str) -> list[Mensagem] | None:
     if not resultados:
         return [Mensagem(f"Sem resultados na web para “{consulta}”.")]
 
+    limite_av = _limite_avaliacao(texto)
     achados: list[str] = []
     fontes_sem_nomes: list[str] = []
+    total_pessoas = 0
     for r in resultados[:4]:
         try:
             coleta = sites.coletar_site(r["url"])
@@ -847,18 +908,40 @@ def lista_nomes(texto: str) -> list[Mensagem] | None:
             fontes_sem_nomes.append(r["url"])
             continue
         pagina = extrair_pagina(coleta.url_final, coleta.html)
-        nomes = extrair_nomes_pessoas(r.get("titulo", "") + "\n" + pagina.texto)
-        if nomes:
-            achados.append(f"**Via {urlparse(coleta.url_final).netloc}** ({coleta.url_final}):\n"
-                           + "\n".join(f"· {n}" for n in nomes[:8]))
-        else:
+        pessoas = extrair_pessoas_com_dados(r.get("titulo", "") + "\n" + pagina.texto)
+        if not pessoas:
             fontes_sem_nomes.append(coleta.url_final)
+            continue
+        if limite_av is not None:
+            filtradas = [p for p in pessoas
+                         if p["avaliacao"] and float(p["avaliacao"]) >= limite_av]
+        else:
+            filtradas = pessoas
+        if not filtradas:
+            continue
+        total_pessoas += len(filtradas)
+        dominio = urlparse(coleta.url_final).netloc
+        linhas_p = []
+        for p in filtradas[:8]:
+            linha = f"· {p['nome']}"
+            if p["telefone"]:
+                linha += f" · 📞 {p['telefone']}"
+            if p["avaliacao"]:
+                linha += f" · ⭐ {p['avaliacao']}"
+            linhas_p.append(linha)
+        achados.append(f"**Via {dominio}** ({coleta.url_final}):\n" + "\n".join(linhas_p))
 
     if achados:
-        extra = (f"\n\nNomes não extraídos de {len(fontes_sem_nomes)} fonte(s) "
-                 f"(carregam via agendamento em JavaScript): {', '.join(fontes_sem_nomes)}") if fontes_sem_nomes else ""
+        aviso = ""
+        if limite_av is not None:
+            aviso = (f"\n\nFiltro aplicado: avaliação ≥ {limite_av}. "
+                     "Fontes que não expõem avaliações ficaram de fora.")
+        extra = (f"\n\nDados não extraídos de {len(fontes_sem_nomes)} fonte(s) "
+                 f"(carregam via agendamento em JavaScript — o canal do navegador cobre): "
+                 f"{', '.join(fontes_sem_nomes)}") if fontes_sem_nomes else ""
         return [Mensagem(
-            f"Nomes encontrados para “{consulta}”:\n\n" + "\n\n".join(achados) + extra
+            f"{total_pessoas} pessoa(s) encontradas para “{consulta}”:{aviso}\n\n"
+            + "\n\n".join(achados) + extra
         )]
     return [Mensagem(
         f"As páginas sobre “{consulta}” não expõem nomes em texto legível "

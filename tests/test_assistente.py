@@ -484,3 +484,40 @@ def test_openclaw_sem_chave_cai_para_busca_web(banco_tmp, monkeypatch):
     r = chatbot.responder("me explique buracos negros")
     assert "OpenClaw indisponível" in r[0].texto
     assert "motores bloqueados" in r[0].texto
+
+
+def test_lista_nomes_com_telefone_e_filtro_avaliacao(banco_tmp, monkeypatch):
+    """Nomes + telefone + filtro de avaliação ("acima de 8,0")."""
+    def fake_detalhado(consulta, limite=6):
+        return [{"url": "https://catalogo.med.br/x", "titulo": "Dentistas SJC"}]
+
+    monkeypatch.setattr(assistente.websearch, "buscar_detalhado", fake_detalhado)
+
+    class FakeColeta:
+        estado = "ok"; detalhe = ""; url_final = "https://catalogo.med.br/x"
+        html = ""
+    monkeypatch.setattr(assistente.sites, "coletar_site", lambda url: FakeColeta())
+    monkeypatch.setattr(assistente, "extrair_pagina", lambda u, h: type("P", (), {
+        "texto": ("Dentistas: Dr. Carlos Souza — (12) 99999-8888 — avaliação 9,2. "
+                  "Dra. Ana Lima — avaliação 6,5. Dr. Bruno Dias."),
+        "titulo": "x", "meta_description": "",
+    })())
+
+    r = chatbot.responder("me dê nomes e telefone de dentistas com avaliações acima de 8,0 em SJC")
+    texto = r[0].texto
+    assert "Dr. Carlos Souza" in texto and "(12) 99999-8888" in texto and "9.2" in texto
+    assert "Filtro aplicado: avaliação ≥ 8.0" in texto
+    assert "Dr. Bruno Dias" not in texto       # sem avaliação exposta → fora do filtro
+    assert "Dra. Ana Lima" not in texto        # 6,5 < 8,0
+
+
+def test_lista_nomes_sem_filtro_lista_todos(banco_tmp, monkeypatch):
+    monkeypatch.setattr(assistente.websearch, "buscar_detalhado",
+                        lambda consulta, limite=6: [{"url": "https://x.com/", "titulo": "x"}])
+    class FakeColeta:
+        estado = "ok"; detalhe = ""; url_final = "https://x.com/"; html = ""
+    monkeypatch.setattr(assistente.sites, "coletar_site", lambda url: FakeColeta())
+    monkeypatch.setattr(assistente, "extrair_pagina", lambda u, h: type("P", (), {
+        "texto": "Dr. Carlos Souza — (12) 99999-8888 — avaliação 9,2.", "titulo": "x", "meta_description": ""})())
+    r = chatbot.responder("nomes de dentistas em SJC")
+    assert "Dr. Carlos Souza" in r[0].texto and "9.2" in r[0].texto
