@@ -228,7 +228,7 @@ def _abrir_app(texto: str) -> list[Mensagem] | None:
 
 def tentar(texto: str) -> list[Mensagem] | None:
     """Tenta as habilidades determinísticas; None = não é comando conhecido."""
-    for handler in (_abrir_app, _lista_apps, _sistema_info, _shell, _abrir_caminho, _hora_data, _calculo, _cotacao, _clima, _lembrete_sistema, _agenda,
+    for handler in (_abrir_app, _lista_apps, _sistema_info, _shell, _abrir_caminho, _extrair_colidado, _hora_data, _calculo, _cotacao, _clima, _lembrete_sistema, _agenda,
                     _email_chat, _lembrete_criar, _lembrete_listar, lista_nomes, _buscar_info,
                     _resumir_url, _abrir_site, _anotar):
         try:
@@ -846,6 +846,44 @@ def extrair_nomes_pessoas(texto: str) -> list[str]:
     return nomes
 
 
+def _extrair_colidado(texto: str) -> list[Mensagem] | None:
+    """Extrai dados estruturados de QUALQUER texto colado: "extrair: <conteúdo>".
+
+    Pessoas (Dr./Dra. + telefone + avaliação), telefones soltos, e-mails e
+    CNPJs. Útil para páginas que bloqueiam robôs: você abre no navegador,
+    copia o conteúdo e cola — o assistente estrutura.
+    """
+    m = re.match(r"\s*extrair\s*[:;]\s*([\s\S]{10,})$", texto.strip(), re.IGNORECASE)
+    if not m:
+        return None
+    conteudo = m.group(1)
+    partes = []
+    pessoas = extrair_pessoas_com_dados(conteudo)
+    if pessoas:
+        linhas = []
+        for p in pessoas[:12]:
+            linha = f"· {p['nome']}"
+            if p["telefone"]:
+                linha += f" · 📞 {p['telefone']}"
+            if p["avaliacao"]:
+                linha += f" · ⭐ {p['avaliacao']}"
+            linhas.append(linha)
+        partes.append("**Pessoas:**\n" + "\n".join(linhas))
+    telefones = list(dict.fromkeys(re.findall(r"\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}", conteudo)))[:6]
+    if telefones:
+        partes.append("**Telefones:** " + ", ".join(telefones))
+    emails = list(dict.fromkeys(re.findall(r"[\w.+-]+@[\w-]+\.[\w.-]+", conteudo)))[:6]
+    if emails:
+        partes.append("**E-mails:** " + ", ".join(emails))
+    cnpjs = list(dict.fromkeys(re.findall(r"\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}", conteudo)))[:4]
+    if cnpjs:
+        partes.append("**CNPJs:** " + ", ".join(cnpjs))
+    if not partes:
+        return [Mensagem("Não encontrei pessoas, telefones, e-mails ou CNPJs no texto colado.")]
+    return [Mensagem("**Dados extraídos do texto:**\n\n" + "\n\n".join(partes))]
+
+
+
 def lista_nomes(texto: str) -> list[Mensagem] | None:
     """Lista de NOMES de pessoas/profissionais: busca, abre as páginas e extrai.
 
@@ -885,7 +923,7 @@ def lista_nomes(texto: str) -> list[Mensagem] | None:
         consulta = f"{profissao} {cidade_busca}"
 
     try:
-        resultados = websearch.buscar_detalhado(consulta, limite=5)
+        resultados = websearch.buscar_detalhado(consulta, limite=10)
     except websearch.BuscaBloqueada as erro:
         return [Mensagem(
             f"Os motores de busca estão bloqueando este IP agora ({erro}). "
@@ -898,7 +936,7 @@ def lista_nomes(texto: str) -> list[Mensagem] | None:
     achados: list[str] = []
     fontes_sem_nomes: list[str] = []
     total_pessoas = 0
-    for r in resultados[:4]:
+    for r in resultados[:8]:
         try:
             coleta = sites.coletar_site(r["url"])
         except Exception:  # noqa: BLE001

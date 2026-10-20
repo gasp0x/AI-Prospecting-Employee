@@ -127,6 +127,8 @@ def _ajuda() -> Mensagem:
         "📅 **Calendário** — \"agende reunião com o cliente amanhã às 14h\" · \"marque dentista dia 25/10 às 9h\"\n"
         "📧 **E-mail real** — \"envie e-mail para foo@bar.com com assunto X dizendo: corpo…\" (aprovação obrigatória)\n"
         "📝 **Anotações** — \"anote: reunião com o cliente na sexta\" (grava no Apple Notes após aprovar)\n"
+        "📋 **Extrair de texto colado** — \"extrair: <cole aqui a lista/página>\" → nomes, telefones,\n"
+        "   avaliações, e-mails e CNPJs estruturados (útil para páginas que bloqueiam robôs)\n"
         "🌐 **Resumos** — \"resume https://exemplo.com.br\" (extrativo) · \"abra github\"\n"
         "🔎 **Busca geral na web** — \"me dê nomes de cardiologistas no Santa Casa em SJC\", \"quem foi Machado de Assis?\"\n"
         "🖥 **Sistema** — \"abra o calendário\" · \"abri\u3000qualquer app instalado\" · \"espaço em disco\" · \"bateria\"\n"

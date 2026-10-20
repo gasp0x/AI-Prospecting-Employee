@@ -521,3 +521,15 @@ def test_lista_nomes_sem_filtro_lista_todos(banco_tmp, monkeypatch):
         "texto": "Dr. Carlos Souza — (12) 99999-8888 — avaliação 9,2.", "titulo": "x", "meta_description": ""})())
     r = chatbot.responder("nomes de dentistas em SJC")
     assert "Dr. Carlos Souza" in r[0].texto and "9.2" in r[0].texto
+
+
+def test_extrair_colidado_estrutura_dados(banco_tmp):
+    colado = ("Dentistas SJC: Dr. Carlos Souza — (12) 99999-8888 — avaliação 9,2. "
+              "Dra. Ana Lima — (12) 98888-7777 — avaliação 6,1. "
+              "Contato: contato@clinica.com.br — CNPJ 12.345.678/0001-90")
+    r = chatbot.responder("extrair: " + colado)
+    texto = r[0].texto
+    assert "Dr. Carlos Souza" in texto and "(12) 99999-8888" in texto and "9.2" in texto
+    assert "Dra. Ana Lima" in texto
+    assert "contato@clinica.com.br" in texto
+    assert "12.345.678/0001-90" in texto
