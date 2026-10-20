@@ -62,6 +62,16 @@ SEGMENTOS: dict[str, str] = {
     "imóveis": "imobiliária",
     "engenharia": "engenharia",
     "arquitetura": "arquiteto",
+    "cardiologista": "cardiologista",
+    "pediatra": "pediatra",
+    "ortopedista": "ortopedista",
+    "dermatologista": "dermatologista",
+    "ginecologista": "ginecologista",
+    "oftalmologista": "oftalmologista",
+    "otorrino": "otorrinolaringologista",
+    "eletricista": "eletricista",
+    "encanador": "encanador",
+    "mecânico": "mecânico",
     "nutrição": "nutricionista",
     "psicologia": "psicólogo",
     "psicólogo": "psicólogo",
@@ -152,7 +162,7 @@ def extrair_criterios(texto_icp: str) -> dict:
         else:
             # fallback 2: substantivo antes de "em" ("floriculturas em Porto Alegre")
             m2 = re.search(r"([\wà-úÀ-Ú]{3,31})\s+em\s+", texto, re.IGNORECASE)
-            if m2:
+            if m2 and _normalizar(m2.group(1)) not in {"casa", "loja", "empresa", "local", "lugar", "cidade", "regiao", "bairro", "zona"}:
                 termo = m2.group(1)
                 consulta = termo[:-1] if termo.endswith("s") and len(termo) > 4 else termo
                 adicionar("segmento", termo, 3.0, consulta=consulta)
@@ -205,13 +215,13 @@ def extrair_criterios(texto_icp: str) -> dict:
     for m in re.finditer(
         r"que\s+(?:tenham?|tenha|usem?|utilize[ms]?|ofere[çc]am?|precise[ms]?|queiram?|busquem?|"
         r"atendam?|trabalhem?|aceitem?|possuam?|disponham?|queira)\s+"
-        r"([\wà-úÀ-Ú][\wà-úÀ-Ú\s,/-]{2,80}?)(?=[\.;!?]|$|\be\b\s+que)",
+        r"([\wà-úÀ-Ú][\wà-úÀ-Ú\s,/-]{2,80}?)(?=[\.;!?]|$|\be\b\s+que|\s+em\s+)",
         texto,
         re.IGNORECASE,
     ):
         bruto = m.group(1)
         for termo in re.split(r"\s*(?:,|e|/|-)\s*", bruto):
-            termo = termo.strip(" .")
+            termo = re.sub(r"^(no|na|em|do|da|dos|das|para|pra)\s+", "", termo.strip(" ."), flags=re.IGNORECASE)
             if len(termo) >= 3 and _normalizar(termo) not in _normalizar(" ".join(c["termo"] for c in criterios)):
                 adicionar("palavra_chave", termo, 1.5)
 

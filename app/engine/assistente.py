@@ -273,32 +273,52 @@ def _buscar_info(texto: str) -> list[Mensagem] | None:
     o que a fonte não tem, aparece como ausente.
     """
     n = _norm(texto)
-    if not re.search(r"\b(informacoes|endereco|telefone|dados|onde fica|contatos?)\b", n):
+    eh_lookup = bool(re.search(r"\b(informacoes|endereco|telefone|dados|onde fica|contatos?)\b", n))
+    # "procure UM cardiologista que atenda no santa casa em SJC" = consulta pontual, não pesquisa em massa
+    m_singular = re.search(r"\b(?:procure|ache|encontre|busque|quero|preciso de)\s+(um|uma)\s+", n)
+    if not eh_lookup and not m_singular:
         return None
 
     alvo = None
     cidade = None
-    m_cidade = re.search(r"(?:na cidade de|em|na|no)\s+([\wà-úÀ-Ú\s]+?)\s*$", texto, re.IGNORECASE)
+    qualificador = ""
+    m_cidade = re.search(
+        r"^.*\b(?:na cidade de|em|na|no)\s+([\wà-úÀ-Ú][\wà-úÀ-Ú\s]*?)\s*$",
+        texto, re.IGNORECASE,
+    )
     if m_cidade:
         cidade = m_cidade.group(1).strip()
-    m_aspas = re.search(r'["“]([^"”]{2,60})["”]', texto)
-    if m_aspas:
-        alvo = m_aspas.group(1).strip()
+    if m_singular:
+        # "um cardiologista que atenda no santa casa em SJC" → alvo + qualificador + cidade
+        corpo = n[m_singular.end():].strip()
+        qualificador = ""
+        if cidade and corpo.lower().endswith(cidade.lower()):
+            corpo = corpo[: -len(cidade)].strip(" ,.")
+        m_que = re.search(r"\bque\s+(.+)$", corpo)
+        if m_que:
+            qualificador = m_que.group(1).strip()
+            alvo = corpo[:m_que.start()].strip(" .,")
+        else:
+            alvo = corpo.strip(" .,")
     else:
-        m_alvo = re.search(
-            r"\b(?:informacoes|endereco|telefone|dados|contatos?)\b\s*"
-            r"(?:como\s+endereco\s+e\s+numero\s+de\s+telefone\s+)?"
-            r"(?:das?|dos?|de|da)\s+(?:as\s+|os\s+)?"
-            r"(?:lojas?|empresas?|clinicas?|escritorios?|academias?|oficinas?|restaurantes?|padarias?|concessionarias?)?\s*"
-            r"(.+?)(?:\s+(?:na|no|em)\s+(?:cidade\s+de\s+)?[\w\s]+)?$",
-            n, re.IGNORECASE,
-        )
-        if m_alvo and m_alvo.group(1).strip():
-            alvo = m_alvo.group(1).strip()
+        m_aspas = re.search(r'["“]([^"”]{2,60})["”]', texto)
+        if m_aspas:
+            alvo = m_aspas.group(1).strip()
+        else:
+            m_alvo = re.search(
+                r"\b(?:informacoes|endereco|telefone|dados|contatos?)\b\s*"
+                r"(?:como\s+endereco\s+e\s+numero\s+de\s+telefone\s+)?"
+                r"(?:das?|dos?|de|da)\s+(?:as\s+|os\s+)?"
+                r"(?:lojas?|empresas?|clinicas?|escritorios?|academias?|oficinas?|restaurantes?|padarias?|concessionarias?)?\s*"
+                r"(.+?)(?:\s+(?:na|no|em)\s+(?:cidade\s+de\s+)?[\w\s]+)?$",
+                n, re.IGNORECASE,
+            )
+            if m_alvo and m_alvo.group(1).strip():
+                alvo = m_alvo.group(1).strip()
     if not alvo or len(alvo) < 2:
         return None
 
-    consulta = f"{alvo} {cidade}".strip() if cidade else alvo
+    consulta = " ".join(x for x in (alvo, cidade) if x)
     from ..adapters import nominatim
 
     try:
@@ -346,11 +366,17 @@ def _buscar_info(texto: str) -> list[Mensagem] | None:
         )
         blocos.append(bloco)
 
+    nota_qualificador = ""
+    if qualificador:
+        nota_qualificador = (
+            f"\n\nObs.: o filtro “{qualificador}” não é pesquisável na fonte pública — "
+            "confirme essa condição no site ou telefone de cada resultado."
+        )
     return [Mensagem(
         f"Encontrei {len(blocos)} resultado(s) para “{alvo}”"
         + (f" em {cidade}" if cidade else "")
         + " (fonte: OpenStreetMap — telefones só aparecem se a fonte tiver):\n\n"
-        + "\n\n".join(blocos)
+        + "\n\n".join(blocos) + nota_qualificador
     )]
 
 

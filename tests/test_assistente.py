@@ -155,3 +155,40 @@ def test_buscar_info_enriquece_com_telefone_do_site(banco_tmp, monkeypatch):
     r = chatbot.responder("informações da clinica beta em campinas")
     assert "(19) 99999-8888" in r[0].texto
     assert "contato@beta.com.br" in r[0].texto
+
+
+def test_consulta_singular_cardiologista_nao_vira_pesquisa(banco_tmp, monkeypatch):
+    """'procure um cardiologista que atenda no santa casa em SJC' = consulta direta."""
+    from app.adapters import nominatim
+
+    consultas_usadas = []
+
+    def fake_buscar(consulta, limite=6, somente_brasil=True):
+        consultas_usadas.append(consulta)
+        return [{
+            "chave": "node/7", "nome": "Dr. Carlos - Cardiologista",
+            "endereco": "Rua Centro 50, São José dos Campos, SP",
+            "cidade": "São José dos Campos", "uf": "SP", "localizacao": "São José dos Campos/SP",
+            "categoria": "doctor", "site": None, "telefone": "(12) 3600-0000",
+            "fonte_url": "https://www.openstreetmap.org/node/7", "lat": None, "lon": None,
+        }]
+
+    monkeypatch.setattr(nominatim, "buscar", fake_buscar)
+    r = chatbot.responder("procure um cardiologista que atenda no santa casa em São José dos campos")
+    # NÃO iniciou pesquisa de ICP
+    assert not any("iniciada" in x.texto for x in r)
+    # retornou a consulta com o cardiologista
+    assert any("Cardiologista" in x.texto for x in r)
+    assert any("cardiologista" in c.lower() for c in consultas_usadas)
+    # qualificador "atenda no santa casa" é declarado como não-filtrável na fonte
+    assert any("atenda no santa casa" in x.texto for x in r)
+
+
+def test_icp_extracao_limpa_para_frases_com_qualificador(banco_tmp):
+    from app.engine.icp import extrair_criterios
+    r = extrair_criterios("procure um cardiologista que atenda no santa casa em São José dos campos")
+    termos = [c["termo"] for c in r["criterios"]]
+    assert "cardiologista" in termos
+    assert "casa" not in termos            # não vira segmento genérico
+    assert "no santa casa" not in termos   # preposição limpa no critério palavra-chave
+    assert any("santa casa" in t for t in termos)  # mas o hospital fica como palavra-chave
