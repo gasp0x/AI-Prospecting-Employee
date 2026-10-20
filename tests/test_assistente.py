@@ -93,6 +93,8 @@ def test_anotar_cria_aprovacao_nao_grava_direto(banco_tmp):
 def test_pergunta_aberta_com_llm_e_sem_llm(banco_tmp, monkeypatch):
     monkeypatch.setattr(assistente, "llm_disponivel", lambda: True)
     monkeypatch.setattr(assistente, "completar_texto", lambda system, user: "Machado de Assis foi um escritor brasileiro.")
+    import app.engine.chatbot as chatbot_mod
+    monkeypatch.setattr(chatbot_mod, "llm_disponivel", lambda: True)
     r = chatbot.responder("quem foi Machado de Assis?")
     assert "Machado" in r[0].texto
 
@@ -280,3 +282,33 @@ def test_interpretar_quando_formatos():
     assert (quando - base).total_seconds() == 1800
     quando, resto = interpretar_quando("reunião sexta às 10h", base)  # 20/10/2026 é terça
     assert quando.weekday() == 4 and quando.day == 23
+
+
+def test_busca_geral_para_pedidos_de_nomes(banco_tmp, monkeypatch):
+    """A frase exata que falhou duas vezes agora vai para a busca geral na web."""
+    consultas = []
+
+    def fake_detalhado(consulta, limite=6):
+        consultas.append(consulta)
+        return [{"url": "https://tuasaude.com/x", "titulo": "Cardiologistas que atendem Santa Casa SJC"}]
+
+    monkeypatch.setattr(assistente.websearch, "buscar_detalhado", fake_detalhado)
+    monkeypatch.setattr(assistente, "llm_disponivel", lambda: False)
+
+    frase = ('preciso que você me de nomes de cardiologistas que trabalham no '
+             '"Santa Casa" em São José dos Campos')
+    r = chatbot.responder(frase)
+    # não foi para LLM nem para pesquisa de prospecção
+    assert "LLM" not in r[0].texto and "iniciada" not in r[0].texto
+    # foi para a web, com consulta limpa
+    assert len(consultas) == 1
+    assert "cardiologistas" in consultas[0].lower()
+    assert "santa casa" in consultas[0].lower()
+    assert "são josé" in consultas[0].lower()
+    assert not consultas[0].lower().startswith("de ")
+    assert "web" in r[0].texto.lower() and "tuasaude.com" in r[0].texto
+
+
+def test_prospeccao_plural_de_negocio_continua_research(banco_tmp):
+    r = chatbot.responder("procure clínicas de fisioterapia em Campinas (SP)")
+    assert any("iniciada" in x.texto for x in r)

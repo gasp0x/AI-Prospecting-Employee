@@ -617,6 +617,70 @@ def _anotar(texto: str) -> list[Mensagem] | None:
     )]
 
 
+
+
+# ---------- busca geral: qualquer assunto, na web ----------
+
+_PREENCHIMENTO = [
+    r"^preciso\s+(?:que\s+voc[êe]\s+)?(?:me\s+)?",
+    r"^voc[êe]\s+(?:pode|poderia|consegue)?\s*(?:me\s+)?",
+    r"^por favor\s*",
+    r"^me\s+d[êe]\s*",
+    r"^d[êe]-me\s*",
+    r"^me\s+passe\s*",
+    r"^gostaria\s+de\s+saber\s*",
+    r"^quero\s+(saber\s+)?",
+    r"^preciso\s+de\s*",
+    r"\bnomes?\s+(?:dos?|de|das|do)\s+",
+    r"\bme\s+d[êe]\b",
+    r"^procure\s+", r"^ache\s+", r"^encontre\s+", r"^busque\s+", r"^busca\s+",
+    r"^quais\s+(?:s[ãa]o\s+)?", r"^quem\s+(?:s[ãa]o|é|e)\s*",
+    r"^de\s+",
+]
+
+
+def busca_geral(texto: str) -> list[Mensagem]:
+    """Busca na web para QUALQUER assunto (pessoas, profissionais, temas, lugares).
+
+    Limpa o preenchimento conversacional, pesquisa e devolve título + link.
+    Fonte: motores públicos (Brave → DuckDuckGo). Se bloquearem, diz com
+    honestidade — nunca inventa.
+    """
+    consulta = texto.strip().rstrip("?!. ")
+    for padrao in _PREENCHIMENTO:
+        consulta = re.sub(padrao, " ", consulta, flags=re.IGNORECASE).strip()
+    consulta = re.sub(r"\s+", " ", consulta).strip()
+    if len(consulta) < 2:
+        consulta = texto.strip()
+
+    resultados = None
+    ultimo_erro = None
+    for tentativa in range(2):  # a janela do limite oscila rápido: 1 retry após pausa
+        try:
+            resultados = websearch.buscar_detalhado(consulta, limite=6)
+            break
+        except websearch.BuscaBloqueada as erro:
+            ultimo_erro = erro
+            if tentativa == 0:
+                websearch.reset_cooldown()
+                time.sleep(7)
+    if resultados is None:
+        return [Mensagem(
+            f"Os motores de busca estão bloqueando este IP agora ({ultimo_erro}). "
+            "É temporário — tente de novo em alguns minutos. Registrei a limitação."
+        )]
+    if not resultados:
+        return [Mensagem(f"Sem resultados na web para “{consulta}”.")]
+
+    linhas = [f"**[{i}. {r['titulo'][:90]}]({r['url']})**" for i, r in enumerate(resultados, 1)]
+    return [Mensagem(
+        f"Busca por “{consulta}” — resultados na **web** (fontes públicas, agora):\n\n"
+        + "\n\n".join(linhas)
+        + "\n\nQuer que eu investigue alguma dessas fontes mais a fundo? Me diga o número ou o site."
+    )]
+
+
+
 # ---------- integração no chat: perguntas abertas ----------
 
 def resposta_livre(texto: str) -> list[Mensagem]:

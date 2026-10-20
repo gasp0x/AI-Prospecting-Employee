@@ -19,6 +19,7 @@ from ..adapters.browser import ponte_navegador
 from ..config import settings
 from ..engine import approvals, assistente, drafting, research
 from ..engine.icp import extrair_criterios
+from ..engine.llm import disponivel as llm_disponivel
 from ..engine.tasks import ROTULOS_ESTADO, gerenciador_tarefas
 from .mensagens import Mensagem, registrar_agente, registrar_usuario
 
@@ -70,9 +71,30 @@ def responder(texto: str) -> list[Mensagem]:
     if habilidades is not None:
         return habilidades
 
-    # prospecção: verbo explícito de busca → ICP + pesquisa
-    if re.search(r"\b(procur[ea]|ach[ea]|encontr[ea]|busqu?e|busca|liste)\b", n):
-        return _novo_icp(texto)
+    # sinais de CONSULTA DE DADOS ("nomes de", "telefone", "endereço") → web sempre (não inventa)
+    sinais_dados = bool(re.search(
+        r"\b(nomes?|telefone|enderec[oa]|informacoes|dados|contatos?|onde fica)\b", n
+    ))
+    # sinais de CONSULTA genérica (me dê, quais, quem, "?")
+    sinais_lookup = bool(re.search(
+        r"\b(me d[êe]|d[êe]-me|me passe|quais|quem|onde fica)\b", n
+    )) or texto.strip().endswith("?")
+
+    # prospecção: verbo de busca + segmento reconhecido, SEM sinal de consulta
+    verbos_busca = bool(re.search(r"\b(procur[ea]|ach[ea]|encontr[ea]|busqu?e|busca|liste)\b", n))
+    if verbos_busca and not sinais_lookup:
+        extraido = extrair_criterios(n)
+        if any(c["tipo"] == "segmento" for c in extraido["criterios"]):
+            return _novo_icp(texto)
+
+    # pergunta de conhecimento com LLM configurado → resposta direta do modelo
+    pergunta_conhecimento = bool(re.search(r"\b(quem (foi|é|e)|o que (é|e|significa)|explique|escreva|como funciona)\b", n))
+    if pergunta_conhecimento and not sinais_dados and llm_disponivel():
+        return assistente.resposta_livre(texto)
+
+    # qualquer outra busca (pessoas, profissionais, temas, lugares) → web
+    if sinais_lookup or sinais_dados or verbos_busca:
+        return assistente.busca_geral(texto)
 
     # pergunta aberta: LLM opcional; sem LLM, orientação honesta
     return assistente.resposta_livre(texto)
@@ -95,6 +117,7 @@ def _ajuda() -> Mensagem:
         "📧 **E-mail real** — \"envie e-mail para foo@bar.com com assunto X dizendo: corpo…\" (aprovação obrigatória)\n"
         "📝 **Anotações** — \"anote: reunião com o cliente na sexta\" (grava no Apple Notes após aprovar)\n"
         "🌐 **Resumos** — \"resume https://exemplo.com.br\" (extrativo) · \"abra github\"\n"
+        "🔎 **Busca geral na web** — \"me dê nomes de cardiologistas no Santa Casa em SJC\", \"quem foi Machado de Assis?\"\n"
         "💬 **Perguntas abertas** — com um LLM configurado no `.env`, respondo o que você precisar\n\n"
         "Regras que eu nunca quebro: só afirmo o que coletei de fontes reais (com URL e data) e "
         "nenhuma ação externa acontece sem sua aprovação com o conteúdo exato (SHA-256)."
