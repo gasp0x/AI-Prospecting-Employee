@@ -7,6 +7,15 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def _apple_script_mock(monkeypatch):
+    """Testes NUNCA executam AppleScript real (Notes/Mail/Calendar do usuário)."""
+    from app.adapters import macos_apps
+
+    monkeypatch.setattr(macos_apps, "executar_osascript",
+                        lambda script, timeout_s=25: "ok (mock AppleScript nos testes)")
+
+
+@pytest.fixture(autouse=True)
 def _openclaw_off(monkeypatch):
     """Testes unitários não chamam o binário real do OpenClaw."""
     from app.engine import openclaw as oc

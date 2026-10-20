@@ -69,10 +69,13 @@ def notes_criar_nota(titulo: str, corpo: str) -> dict:
 
 
 def mail_criar_rascunho(para: str | None, assunto: str, corpo: str) -> dict:
-    """Cria um RASCUNHO no Apple Mail (não envia). Retorna {id, assunto}."""
+    """Cria um RASCUNHO no Apple Mail (não envia, não abre janela).
+
+    O rascunho vai direto para a pasta Rascunhos do Mail.
+    """
     linhas = [
         'tell application "Mail"',
-        f'    set msg to make new outgoing message with properties {{subject:"{_escapar(assunto)}", content:"{_escapar(corpo)}", visible:true}}',
+        f'    set msg to make new outgoing message with properties {{subject:"{_escapar(assunto)}", content:"{_escapar(corpo)}", visible:false}}',
     ]
     if para:
         linhas.append(
