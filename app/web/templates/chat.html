@@ -40,15 +40,18 @@
 
 <div id="conversa"></div>
 <div class="sugestoes">
-  <button data-texto="procure clínicas de fisioterapia em Campinas (SP), com site próprio">🔍 procurar clínicas em Campinas</button>
+  <button data-texto="procure dentistas em Curitiba (PR) com site próprio">🔍 dentistas em Curitiba</button>
+  <button data-texto="procure floriculturas em Porto Alegre (RS) com entrega própria">🌸 floriculturas em Porto Alegre</button>
+  <button data-texto="procure academias em São Paulo (SP) que usem check-in digital">💪 academias em São Paulo</button>
   <button data-texto="status">status</button>
   <button data-texto="resultados">resultados</button>
+  <button data-texto="cotação do dólar">cotação</button>
   <button data-texto="aprovações">aprovações</button>
-  <button data-texto="exportar">exportar</button>
   <button data-texto="ajuda">ajuda</button>
+  <button id="btn-limpar" title="Apaga o histórico desta conversa">🧹 limpar conversa</button>
 </div>
 <form id="entrada">
-  <textarea id="campo" placeholder="Fale com seu funcionário: “procure academias em São Paulo que usem check-in digital”" autofocus></textarea>
+  <textarea id="campo" placeholder="Fale com seu funcionário e assistente: prospecção, cálculos, clima, lembretes, o que precisar…" autofocus></textarea>
   <button type="submit">➤</button>
 </form>
 
@@ -119,7 +122,15 @@ document.querySelector("form#entrada").addEventListener("submit", (e) => { e.pre
 campo.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviar(campo.value); }
 });
-document.querySelectorAll(".sugestoes button").forEach((b) => b.addEventListener("click", () => enviar(b.dataset.texto)));
+document.querySelectorAll(".sugestoes button[data-texto]").forEach((b) => b.addEventListener("click", () => enviar(b.dataset.texto)));
+
+document.getElementById("btn-limpar").addEventListener("click", async () => {
+  if (!confirm("Apagar o histórico desta conversa? (tarefas e resultados não são afetados)")) return;
+  await fetch("/api/chat/limpar", { method: "POST" });
+  ultimoId = 0;
+  conversa.innerHTML = "";
+  puxar();
+});
 
 puxar();
 setInterval(puxar, 2000);

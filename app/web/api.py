@@ -32,6 +32,16 @@ def enviar_chat(corpo: dict):
     }
 
 
+@api_router.post("/api/chat/limpar")
+def limpar_chat():
+    """Apaga só o histórico da conversa; tarefas, empresas e auditoria ficam."""
+    from ..db import transacao
+
+    with transacao() as conn:
+        conn.execute("DELETE FROM chat_msg")
+    return {"ok": True}
+
+
 @api_router.get("/api/chat/mensagens")
 def mensagens_chat(depois: int = 0):
     chatbot.puxar_notificacoes()

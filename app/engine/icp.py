@@ -162,6 +162,15 @@ def extrair_criterios(texto_icp: str) -> dict:
                     "Revise os critérios abaixo — sem um segmento, a busca fica muito ampla."
                 )
 
+    # --- segmento genérico redundante: "clínicas de fisioterapia" não são dois segmentos ---
+    segmentos_atual = [c for c in criterios if c["tipo"] == "segmento"]
+    if len(segmentos_atual) > 1 and any(c["consulta"] == "clínica" for c in segmentos_atual) \
+            and any(c["consulta"] != "clínica" for c in segmentos_atual):
+        criterios = [c for c in criterios
+                     if not (c["tipo"] == "segmento" and c["consulta"] == "clínica")]
+        for i, c in enumerate(criterios, 1):
+            c["id"] = f"c{i}"
+
     # --- localização ---
     localizacoes: list[tuple[str, str]] = []  # (exibição, uf)
     for chave, (nome, uf) in _CIDADES.items():

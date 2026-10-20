@@ -98,3 +98,21 @@ def test_pagina_do_chat_responde(banco_tmp):
     assert pagina.status_code == 200
     assert "Funcionário de Prospecção" in pagina.text
     assert cliente.get("/painel").status_code == 200
+
+
+def test_segmento_generico_duplicado_e_removido(banco_tmp):
+    """'clínicas de fisioterapia' vira UM segmento (fisioterapia), não dois."""
+    respostas = chatbot.responder("procure clínicas de fisioterapia em Campinas (SP), com site próprio")
+    assert any("2 critério" in r.texto for r in respostas), respostas
+    from app.engine.icp import extrair_criterios
+    r = extrair_criterios("clínicas de fisioterapia em Campinas (SP)")
+    segs = [c["termo"] for c in r["criterios"] if c["tipo"] == "segmento"]
+    assert segs == ["fisioterapia"]
+
+
+def test_limpar_chat(banco_tmp):
+    cliente.post("/api/chat", json={"texto": "ajuda"})
+    assert db.listar("chat_msg", limite=1)
+    resposta = cliente.post("/api/chat/limpar")
+    assert resposta.status_code == 200
+    assert db.listar("chat_msg", limite=1) == []

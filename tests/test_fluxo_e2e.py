@@ -100,9 +100,10 @@ def test_fluxo_completo_pesquisa_qualificacao_exportacao(banco_tmp, monkeypatch)
 
     sem_site = por_nome["Fisio Bem Estar"]
     assert sem_site["site"] is None  # busca bloqueada → sem site inventado
-    # segmentos + localização comprovados só pela fonte de descoberta (parcial, 0,7×):
-    # (3+3+2)*0,7 = 5,6 de 9,5; "convênios" ausente (busca bloqueada, sem página oficial)
-    assert sem_site["pontuacao"] == 58.9
+    # segmento deduplicado ("clínicas de fisioterapia" = 1 critério) + localização,
+    # comprovados só pela fonte de descoberta (parcial, 0,7×): (3+2)*0,7 = 3,5 de 6,5;
+    # "convênios" ausente (busca bloqueada, sem página oficial)
+    assert sem_site["pontuacao"] == 53.8
 
     # 5. limitação registrada no histórico com transparência
     eventos = [e["mensagem"] for e in db.listar("tarefa_evento", where="tarefa_id = ?", parametros=(tarefa_id,))]
