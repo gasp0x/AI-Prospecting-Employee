@@ -13,14 +13,20 @@ from __future__ import annotations
 
 import html as html_mod
 import re
+import subprocess
 import threading
 import time
 from urllib.parse import parse_qs, unquote, urlparse
 
-import httpx
 
 from ..config import settings
 
+# Motores de busca endurecem a resposta quando o UA se declara bot. Aqui usamos
+# UA de navegador padrão; quando bloquearem mesmo assim, respeitamos e registramos.
+_UA_NAVEGADOR = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/154.0 Safari/537.36"
+)
 _URL_DDG = "https://html.duckduckgo.com/html/"
 _URL_BRAVE = "https://search.brave.com/search"
 
@@ -45,15 +51,57 @@ class BuscaBloqueada(Exception):
     """Todos os motores de busca recusaram o acesso (anti-bot/CAPTCHA)."""
 
 
+def _curl(metodo: str, url: str, dados: dict | None = None, timeout_s: int | None = None) -> tuple[int, str]:
+    """HTTP via curl nativo (fingerprint TLS de navegador; httpx recebe 429 por JA3)."""
+    timeout = timeout_s or settings.timeout_busca_s
+    comando = ["curl", "-s", "-L", "--max-time", str(timeout),
+               "-A", _UA_NAVEGADOR,
+               "-H", "Accept-Language: pt-BR,pt;q=0.9",
+               "-o", "-", "-w", "\n===CURL_STATUS=%{http_code}"]
+    if metodo == "GET" and dados:
+        for chave, valor in dados.items():
+            comando += ["--data-urlencode", f"{chave}={valor}"]
+        comando += ["-G"]
+    elif metodo == "POST" and dados:
+        for chave, valor in dados.items():
+            comando += ["--data-urlencode", f"{chave}={valor}"]
+    comando.append(url)
+    processo = subprocess.run(comando, capture_output=True, text=True, timeout=timeout + 10)
+    saida = processo.stdout
+    if "===CURL_STATUS=" in saida:
+        corpo, _, status = saida.rpartition("===CURL_STATUS=")
+        return int(status.strip() or 0), corpo
+    return 0, saida
+
+
 def _resposta_bloqueada(status: int, corpo: str) -> bool:
     if status in (202, 403, 429):
         return True
-    corpo_baixo = corpo[:200_000].lower()
-    return any(m in corpo_baixo for m in _MARCADORES_BLOQUEIO)
+    # marcadores só no <title>: páginas legítimas (200) carregam a palavra
+    # "captcha" dentro do JavaScript delas e o scan no corpo gerava falso positivo
+    titulo = re.search(r"<title>([^<]*)</title>", corpo[:5000], re.IGNORECASE)
+    if titulo and any(m in titulo.group(1).lower() for m in _MARCADORES_BLOQUEIO):
+        return True
+    return "verify you are human" in corpo[:5000].lower() or "prove you are human" in corpo[:5000].lower()
 
 
 def _limpar(url: str) -> str:
     return html_mod.unescape(url).strip()
+
+
+_cache: dict[str, tuple[float, list]] = {}
+_CACHE_TTL_S = 600
+
+
+def _cache_obter(chave: str) -> list | None:
+    item = _cache.get(chave)
+    if item and time.monotonic() - item[0] < _CACHE_TTL_S:
+        return item[1]
+    return None
+
+
+def _cache_guardar(chave: str, valor: list) -> None:
+    _cache[chave] = (time.monotonic(), valor)
 
 
 def reset_cooldown() -> None:
@@ -67,6 +115,11 @@ def buscar(consulta: str, limite: int = 8) -> list[str]:
 
     Levanta `BuscaBloqueada` apenas se todos os motores falharem.
     """
+    chave = f"busca:{consulta.lower().strip()}:{limite}"
+    em_cache = _cache_obter(chave)
+    if em_cache is not None:
+        return em_cache
+
     falhas: list[str] = []
     for nome, funcao in (("duckduckgo", _buscar_ddg), ("brave", _buscar_brave)):
         if _em_cooldown(nome):
@@ -78,10 +131,11 @@ def buscar(consulta: str, limite: int = 8) -> list[str]:
             _aplicar_cooldown(nome)
             falhas.append(f"{nome}: {erro}")
             continue
-        except httpx.HTTPError as erro:
+        except (OSError, subprocess.SubprocessError) as erro:
             falhas.append(f"{nome}: {type(erro).__name__}: {erro}")
             continue
         if urls:
+            _cache_guardar(chave, urls)
             return urls
         falhas.append(f"{nome}: sem resultados")
     raise BuscaBloqueada("; ".join(falhas))
@@ -103,7 +157,7 @@ def buscar_detalhado(consulta: str, limite: int = 6) -> list[dict]:
             _aplicar_cooldown(nome)
             falhas.append(f"{nome}: {erro}")
             continue
-        except httpx.HTTPError as erro:
+        except (OSError, subprocess.SubprocessError) as erro:
             falhas.append(f"{nome}: {type(erro).__name__}: {erro}")
             continue
         if resultados:
@@ -113,25 +167,20 @@ def buscar_detalhado(consulta: str, limite: int = 6) -> list[dict]:
 
 
 def _brave_detalhado(consulta: str, limite: int) -> list[dict]:
-    resposta = httpx.get(
-        _URL_BRAVE,
-        params={"q": consulta},
-        headers={"User-Agent": settings.agente_usuario, "Accept-Language": "pt-BR,pt;q=0.9"},
-        timeout=settings.timeout_busca_s,
-        follow_redirects=True,
-    )
-    if _resposta_bloqueada(resposta.status_code, resposta.text):
-        raise BuscaBloqueada(f"HTTP {resposta.status_code} (anti-bot/CAPTCHA)")
-    resposta.raise_for_status()
+    status, corpo = _curl("GET", _URL_BRAVE, {"q": consulta})
+    if _resposta_bloqueada(status, corpo):
+        raise BuscaBloqueada(f"HTTP {status} (anti-bot/CAPTCHA)")
+    if status >= 400:
+        raise BuscaBloqueada(f"HTTP {status}")
 
     resultados: list[dict] = []
     for bloco in re.finditer(
         r'<div class="snippet svelte[^"]*" data-pos="\d+" data-type="web".*?(?=<div class="snippet svelte|</section>)',
-        resposta.text,
+        corpo,
         re.DOTALL,
     ):
-        corpo = bloco.group(0)
-        ancora = re.search(r'<a[^>]+href="(https?://[^"]+)"[^>]*>(.*?)</a>', corpo, re.DOTALL)
+        bloco_html = bloco.group(0)
+        ancora = re.search(r'<a[^>]+href="(https?://[^"]+)"[^>]*>(.*?)</a>', bloco_html, re.DOTALL)
         if not ancora:
             continue
         url = html_mod.unescape(ancora.group(1)).strip()
@@ -148,20 +197,15 @@ def _brave_detalhado(consulta: str, limite: int) -> list[dict]:
 
 
 def _ddg_detalhado(consulta: str, limite: int) -> list[dict]:
-    resposta = httpx.post(
-        _URL_DDG,
-        data={"q": consulta, "kl": "br-pt"},
-        headers={"User-Agent": settings.agente_usuario},
-        timeout=settings.timeout_busca_s,
-        follow_redirects=True,
-    )
-    if _resposta_bloqueada(resposta.status_code, resposta.text):
-        raise BuscaBloqueada(f"HTTP {resposta.status_code} (anti-bot/CAPTCHA)")
-    resposta.raise_for_status()
+    status, corpo = _curl("POST", _URL_DDG, {"q": consulta, "kl": "br-pt"})
+    if _resposta_bloqueada(status, corpo):
+        raise BuscaBloqueada(f"HTTP {status} (anti-bot/CAPTCHA)")
+    if status >= 400:
+        raise BuscaBloqueada(f"HTTP {status}")
 
     resultados: list[dict] = []
     for m in re.finditer(
-        r'class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>', resposta.text, re.DOTALL
+        r'class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>', corpo, re.DOTALL
     ):
         href = _limpar(m.group(1))
         if "y.js" in href or "ad_domain=" in href:
@@ -181,19 +225,14 @@ def _ddg_detalhado(consulta: str, limite: int) -> list[dict]:
 
 
 def _buscar_ddg(consulta: str, limite: int) -> list[str]:
-    resposta = httpx.post(
-        _URL_DDG,
-        data={"q": consulta, "kl": "br-pt"},
-        headers={"User-Agent": settings.agente_usuario},
-        timeout=settings.timeout_busca_s,
-        follow_redirects=True,
-    )
-    if _resposta_bloqueada(resposta.status_code, resposta.text):
-        raise BuscaBloqueada(f"HTTP {resposta.status_code} (anti-bot/CAPTCHA)")
-    resposta.raise_for_status()
+    status, corpo = _curl("POST", _URL_DDG, {"q": consulta, "kl": "br-pt"})
+    if _resposta_bloqueada(status, corpo):
+        raise BuscaBloqueada(f"HTTP {status} (anti-bot/CAPTCHA)")
+    if status >= 400:
+        raise BuscaBloqueada(f"HTTP {status}")
 
     urls: list[str] = []
-    for m in re.finditer(r'class="result__a"[^>]*href="([^"]+)"', resposta.text):
+    for m in re.finditer(r'class="result__a"[^>]*href="([^"]+)"', corpo):
         href = _limpar(m.group(1))
         # anúncios (y.js?ad_domain=...) e links encapsulados uddg
         if "y.js" in href or "ad_domain=" in href:
@@ -212,22 +251,17 @@ def _buscar_ddg(consulta: str, limite: int) -> list[str]:
 
 
 def _buscar_brave(consulta: str, limite: int) -> list[str]:
-    resposta = httpx.get(
-        _URL_BRAVE,
-        params={"q": consulta},
-        headers={"User-Agent": settings.agente_usuario, "Accept-Language": "pt-BR,pt;q=0.9"},
-        timeout=settings.timeout_busca_s,
-        follow_redirects=True,
-    )
-    if _resposta_bloqueada(resposta.status_code, resposta.text):
-        raise BuscaBloqueada(f"HTTP {resposta.status_code} (anti-bot/CAPTCHA)")
-    resposta.raise_for_status()
+    status, corpo = _curl("GET", _URL_BRAVE, {"q": consulta})
+    if _resposta_bloqueada(status, corpo):
+        raise BuscaBloqueada(f"HTTP {status} (anti-bot/CAPTCHA)")
+    if status >= 400:
+        raise BuscaBloqueada(f"HTTP {status}")
 
     urls: list[str] = []
     # resultados orgânicos ficam em blocos <div ... data-type="web"> com o link principal
     for m in re.finditer(
         r'<div[^>]+data-type="web"[^>]*>.{0,3000}?<a[^>]+href="(https?://[^"]+)"',
-        resposta.text,
+        corpo,
         re.DOTALL,
     ):
         href = _limpar(m.group(1))

@@ -10,8 +10,10 @@ from app.adapters import sites, websearch
 @pytest.fixture(autouse=True)
 def _sem_cooldown():
     websearch.reset_cooldown()
+    websearch._cache.clear()
     yield
     websearch.reset_cooldown()
+    websearch._cache.clear()
 from app.engine.research import dominio_corresponde_ao_nome, dominio_de
 
 
@@ -39,21 +41,19 @@ def test_busca_web_todos_os_motores_bloqueados(banco_tmp, monkeypatch):
         "was triggered. Please solve a captcha to continue.</body></html>"
     )
 
-    def fake_post(*args, **kwargs):
-        return _Resposta(status_code=202, texto=pagina_anomalia)
+    def fake_curl(metodo, url, dados=None, timeout_s=None):
+        if metodo == "POST":
+            return 202, pagina_anomalia
+        return 403, "captcha challenge"
 
-    def fake_get(*args, **kwargs):
-        return _Resposta(status_code=403, texto="captcha challenge")
-
-    monkeypatch.setattr(websearch.httpx, "post", fake_post)
-    monkeypatch.setattr(websearch.httpx, "get", fake_get)
+    monkeypatch.setattr(websearch, "_curl", fake_curl)
     with pytest.raises(websearch.BuscaBloqueada):
         websearch.buscar("qualquer consulta")
 
 
 def test_ddg_bloqueado_cai_para_brave(banco_tmp, monkeypatch):
     """NordVPN ativa: DDG bloqueia (202), Brave responde com resultados orgânicos."""
-    pagina_anomalia = "<html>anomaly detection captcha</html>"
+    pagina_anomalia = "<html><title>Captcha</title><body>anomaly detection</body></html>"
     pagina_brave = (
         '<html><main><section id="mixed-main">'
         '<div class="snippet" data-type="web"><a href="https://clinica.com.br/">r1</a></div>'
@@ -63,14 +63,12 @@ def test_ddg_bloqueado_cai_para_brave(banco_tmp, monkeypatch):
         "</section></main></html>"
     )
 
-    def fake_post(*args, **kwargs):
-        return _Resposta(status_code=202, texto=pagina_anomalia)
+    def fake_curl(metodo, url, dados=None, timeout_s=None):
+        if metodo == "POST":
+            return 202, pagina_anomalia
+        return 200, pagina_brave
 
-    def fake_get(*args, **kwargs):
-        return _Resposta(status_code=200, texto=pagina_brave)
-
-    monkeypatch.setattr(websearch.httpx, "post", fake_post)
-    monkeypatch.setattr(websearch.httpx, "get", fake_get)
+    monkeypatch.setattr(websearch, "_curl", fake_curl)
     urls = websearch.buscar("consulta", limite=5)
     assert urls == ["https://clinica.com.br/", "https://outra.com.br/"]
 
@@ -84,10 +82,7 @@ def test_busca_web_extrai_links_organicos_e_descarta_anuncios(banco_tmp, monkeyp
         '</html>'
     )
 
-    def fake_post(*args, **kwargs):
-        return _Resposta(status_code=200, texto=pagina)
-
-    monkeypatch.setattr(websearch.httpx, "post", fake_post)
+    monkeypatch.setattr(websearch, "_curl", lambda metodo, url, dados=None, timeout_s=None: (200, pagina))
     urls = websearch.buscar("consulta", limite=5)
     assert "https://clinica.com.br/" in urls
     assert "https://direta.com.br/" in urls

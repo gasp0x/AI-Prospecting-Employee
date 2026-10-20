@@ -118,6 +118,7 @@ def test_buscar_info_estabelecimento_por_nome_e_cidade(banco_tmp, monkeypatch):
         "fonte_url": "https://www.openstreetmap.org/node/1", "lat": None, "lon": None,
     }]
     monkeypatch.setattr(nominatim, "buscar", lambda consulta, limite=6, somente_brasil=True: candidatos)
+    monkeypatch.setattr(assistente.websearch, "buscar_detalhado", lambda consulta, limite=5: [])
 
     pergunta = ('me dê algumas informações, como endereço e numero de telefone das lojas '
                 '"tony veiculos" na cidade de São José dos Campos')
@@ -164,6 +165,7 @@ def test_buscar_info_enriquece_com_telefone_do_site(banco_tmp, monkeypatch):
         "telefone": None, "fonte_url": "https://www.openstreetmap.org/node/2", "lat": None, "lon": None,
     }]
     monkeypatch.setattr(nominatim, "buscar", lambda consulta, limite=6, somente_brasil=True: candidatos)
+    monkeypatch.setattr(assistente.websearch, "buscar_detalhado", lambda consulta, limite=5: [])
     html = ("<html><head><title>Beta</title></head><body>Contato (19) 99999-8888 "
             "contato@beta.com.br</body></html>")
     monkeypatch.setattr(assistente.sites, "coletar_site",
@@ -190,6 +192,7 @@ def test_consulta_singular_cardiologista_nao_vira_pesquisa(banco_tmp, monkeypatc
         }]
 
     monkeypatch.setattr(nominatim, "buscar", fake_buscar)
+    monkeypatch.setattr(assistente.websearch, "buscar_detalhado", lambda consulta, limite=5: [])
     r = chatbot.responder("procure um cardiologista que atenda no santa casa em São José dos campos")
     # NÃO iniciou pesquisa de ICP
     assert not any("iniciada" in x.texto for x in r)
