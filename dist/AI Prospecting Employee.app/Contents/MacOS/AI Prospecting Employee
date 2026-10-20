@@ -1,0 +1,4 @@
+#!/bin/bash
+# Launcher do app desktop: servidor + janela nativa no venv do projeto
+PROJETO="$(cd "$(dirname "$0")/../../../.." && pwd)"
+exec "$PROJETO/.venv/bin/python" -m app.desktop

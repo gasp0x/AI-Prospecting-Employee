@@ -54,6 +54,14 @@ cp .env.example .env            # opcional: ajuste porta, assinatura, token da e
 
 ## Execução
 
+**Como app de desktop (recomendado)** — janela nativa + servidor embutido:
+
+```bash
+open "dist/AI Prospecting Employee.app"     # duplo clique no Finder também funciona
+```
+
+**Como servidor web puro** (para acessar de outros dispositivos na rede local):
+
 ```bash
 .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8734
 ```

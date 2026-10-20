@@ -9,3 +9,4 @@ Jinja2==3.1.6             # BSD   — templates server-side pt-BR (sem build de 
 pydantic==2.14.1          # MIT   — validação de dados (dependência do FastAPI)
 python-multipart==0.0.32  # Apache-2.0 — parsing de formulários HTML
 pytest==9.1.1             # MIT   — testes (somente desenvolvimento)
+pywebview==6.1.0          # MIT   — janela nativa (WKWebView) do app desktop
