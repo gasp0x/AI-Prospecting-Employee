@@ -397,3 +397,52 @@ def test_agenda_apos_abrir_calendario(banco_tmp, monkeypatch):
     chatbot.responder("abra o calendario")
     r = chatbot.responder("agende reunião com o investidor amanhã às 14h")
     assert any("Calendário" in x.texto for x in r)
+
+
+def test_sistema_info_leitura_sem_aprovacao(banco_tmp, monkeypatch):
+    monkeypatch.setattr(assistente.macos_apps, "info_sistema",
+                        lambda tipo: f"SAIDA-{tipo}")
+    r = chatbot.responder("quanto de espaço em disco e bateria?")
+    texto = r[0].texto
+    assert "SAIDA-disco" in texto and "SAIDA-bateria" in texto
+    assert "leitura somente" in texto
+
+
+def test_shell_cria_aprovacao_e_executa_comando_exato(banco_tmp, monkeypatch):
+    from app.engine import approvals
+
+    executados = []
+    monkeypatch.setattr(approvals.macos_apps, "comando_shell",
+                        lambda comando, timeout_s=30: executados.append((comando, timeout_s)) or
+                        {"comando": comando, "returncode": 0, "stdout": "arquivo.txt", "stderr": ""})
+
+    r = chatbot.responder("rode: ls -la")
+    assert "executar no terminal" in r[0].texto and "ls -la" in r[0].texto
+    aprovacao = db.listar("aprovacao", where="tipo_acao = 'executar_comando_shell'")[0]
+    assert aprovacao["conteudo"] == "ls -la"
+
+    approvals.decidir(aprovacao["id"], aprovar=True)
+    assert aguardar(lambda: db.buscar_um("aprovacao", aprovacao["id"])["estado"] == "executada")
+    assert executados == [("ls -la", 30)]
+
+
+def test_shell_recusa_padrao_destrutivo(banco_tmp):
+    r = chatbot.responder("rode: rm -rf /")
+    assert "recusado por segurança" in r[0].texto
+    assert db.listar("aprovacao", where="tipo_acao = 'executar_comando_shell'") == []
+
+
+def test_abrir_caminho_documentos(banco_tmp, monkeypatch):
+    abertos = []
+    monkeypatch.setattr(assistente.macos_apps, "abrir_caminho",
+                        lambda caminho: abertos.append(caminho) or {"caminho": caminho, "aberto": True})
+    r = chatbot.responder("abra a pasta Documentos")
+    assert "Documents" in r[0].texto
+    assert abertos == ["~/Documents"]
+
+
+def test_lista_apps_instalados(banco_tmp, monkeypatch):
+    monkeypatch.setattr(assistente.macos_apps, "lista_apps_instalados",
+                        lambda: ["Safari", "Notes", "Xcode"])
+    r = chatbot.responder("apps instalados")
+    assert "Safari" in r[0].texto and "3 aplicativos" in r[0].texto

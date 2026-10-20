@@ -25,7 +25,7 @@ import httpx
 from urllib.parse import urlparse
 
 from .. import db
-from ..adapters import nominatim, sites, websearch
+from ..adapters import macos_apps, nominatim, sites, websearch
 from ..engine.evidence import extrair_entidades, extrair_pagina
 from ..config import settings
 from ..engine import approvals
@@ -109,6 +109,89 @@ _APPS_CONHECIDOS = {
 }
 
 
+# ---------- acesso amplo ao sistema ----------
+
+def _sistema_info(texto: str) -> list[Mensagem] | None:
+    """Informações somente-leitura: disco, memória, macOS, bateria, uptime."""
+    n = _norm(texto)
+    tipos = []
+    if re.search(r"\b(espac\w* em disco|disco)\b", n):
+        tipos.append("disco")
+    if re.search(r"\b(memoria|ram)\b", n):
+        tipos.append("memoria")
+    if re.search(r"\b(versao do macos|versao do sistema|macos|os x)\b", n):
+        tipos.append("macos")
+    if re.search(r"\bbateria\b", n):
+        tipos.append("bateria")
+    if re.search(r"\buptime|ligado ha\b", n):
+        tipos.append("uptime")
+    if not tipos:
+        return None
+    partes = [f"**{tipo.title()}:**\n{macos_apps.info_sistema(tipo)}" for tipo in tipos]
+    return [Mensagem("\n\n".join(partes) + "\n\n(leitura somente — nada foi alterado)")]
+
+
+_PADRAO_SHELL = re.compile(r"^\s*(?:rod[ae]|execut[ae]|terminal|shell)\s*[:;]?\s*(.+)$", re.IGNORECASE | re.DOTALL)
+
+
+def _shell(texto: str) -> list[Mensagem] | None:
+    """Comando shell DE VERDADE — sempre com aprovação do comando exato."""
+    m = _PADRAO_SHELL.match(texto)
+    if not m:
+        return None
+    comando = m.group(1).strip()
+    if not comando:
+        return None
+    recusado = macos_apps.padrao_destrutivo(comando)
+    if recusado:
+        return [Mensagem(
+            f"⛔ Comando recusado por segurança: contém o padrão destrutivo “{recusado}”. "
+            "Nem a aprovação autoriza isso."
+        )]
+    try:
+        aprovacao_id = approvals.solicitar(
+            tipo_acao="executar_comando_shell",
+            resumo="EXECUTAR comando no terminal do seu Mac (shell, permissões do usuário, 30s de limite).",
+            conteudo=comando,
+            params={"timeout_s": 30},
+        )
+    except Exception as erro:  # noqa: BLE001 — recusa de padrão destrutivo
+        return [Mensagem(str(erro))]
+    return [Mensagem(
+        f"Comando pronto para **executar no terminal**:\n\n```\n{comando}\n```\n\n"
+        f"Responda **aprovar {aprovacao_id}** para executar (hash registrado) · **negar {aprovacao_id}** cancela."
+    )]
+
+
+def _abrir_caminho(texto: str) -> list[Mensagem] | None:
+    """Abrir pasta/arquivo: "abra a pasta Documentos", "abra ~/Desktop"."""
+    m = re.search(r"\babr[aei]\s+(?:a\s+)?(?:pasta|o\s+arquivo|o\s+documento)\s+(\S.*)\s*$",
+                  texto, re.IGNORECASE)
+    if not m:
+        return None
+    alvo = m.group(1).strip()
+    atalhos = {"documentos": "~/Documents", "documents": "~/Documents",
+               "downloads": "~/Downloads", "desktop": "~/Desktop",
+               "area de trabalho": "~/Desktop"}
+    if alvo.lower() in atalhos:
+        alvo = atalhos[alvo.lower()]
+    try:
+        resultado = macos_apps.abrir_caminho(alvo)
+    except macos_apps.AcaoMacFalhou as erro:
+        return [Mensagem(str(erro))]
+    return [Mensagem(f"✅ Abri {resultado['caminho']} no Finder/app padrão.")]
+
+
+def _lista_apps(texto: str) -> list[Mensagem] | None:
+    if not re.search(r"\b(apps? instalados?|lista de apps?|aplicativos instalados?)\b", _norm(texto)):
+        return None
+    apps = macos_apps.lista_apps_instalados()
+    if not apps:
+        return [Mensagem("Não consegui listar os aplicativos.")]
+    return [Mensagem(f"**{len(apps)} aplicativos instalados:**\n" + ", ".join(apps[:60]) +
+                     ("…" if len(apps) > 60 else ""))]
+
+
 def _abrir_app(texto: str) -> list[Mensagem] | None:
     """Abre um aplicativo do macOS: "abra o calendário", "abra o mail"…"""
     m = re.match(r"\s*abr[aei]r?\s+(.+)$", texto.strip(), re.IGNORECASE)
@@ -121,6 +204,11 @@ def _abrir_app(texto: str) -> list[Mensagem] | None:
     # corta justificativas: "abra o calendário pra eu agendar…" → "calendario"
     resto = re.split(r"\b(pra|para|poder|que|e depois|assim)\b", resto)[0].strip()
     app = _APPS_CONHECIDOS.get(resto)
+    if not app:
+        for instalado in macos_apps.lista_apps_instalados():
+            if _norm(instalado) == resto or resto in _norm(instalado):
+                app = instalado
+                break
     if not app:
         return None
     try:
@@ -140,7 +228,7 @@ def _abrir_app(texto: str) -> list[Mensagem] | None:
 
 def tentar(texto: str) -> list[Mensagem] | None:
     """Tenta as habilidades determinísticas; None = não é comando conhecido."""
-    for handler in (_abrir_app, _hora_data, _calculo, _cotacao, _clima, _lembrete_sistema, _agenda,
+    for handler in (_abrir_app, _lista_apps, _sistema_info, _shell, _abrir_caminho, _hora_data, _calculo, _cotacao, _clima, _lembrete_sistema, _agenda,
                     _email_chat, _lembrete_criar, _lembrete_listar, lista_nomes, _buscar_info,
                     _resumir_url, _abrir_site, _anotar):
         try:

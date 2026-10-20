@@ -137,8 +137,10 @@ def calendar_criar_evento(titulo: str, inicio: datetime, duracao_min: int = 60, 
         'tell application "Calendar"\n'
         "    set inicio to (current date) + " + str(delta_inicio) + " * minutes\n"
         "    set fim to inicio + " + str(int(duracao_min)) + " * minutes\n"
-        f'    make new event at end of events of calendar 1 with properties {{summary:"{_escapar(titulo)}", start date:inicio, end date:fim{local_props}}}\n'
-        "    return summary of it\n"
+        "    tell calendar 1\n"
+        f'        set novoEvento to make new event at end of events with properties {{summary:"{_escapar(titulo)}", start date:inicio, end date:fim{local_props}}}\n'
+        "    end tell\n"
+        "    return id of novoEvento\n"
         "end tell"
     )
     resultado = executar_osascript(script)
@@ -151,3 +153,93 @@ def calendar_criar_evento(titulo: str, inicio: datetime, duracao_min: int = 60, 
 def extrair_id_resultado(saida: str) -> str:
     """Utilitário para limpar o identificador retornado pelo app."""
     return re.sub(r"\s+", " ", saida).strip()
+
+
+# ---------- acesso amplo ao sistema ----------
+
+_PADROES_DESTRUTIVOS = [
+    "rm -rf /", "rm -fr /", "sudo rm -rf", "diskutil erase", "diskutil apfs delete",
+    "mkfs", ":(){:|:&};:", "dd if=/dev/zero of=/dev/", "chmod -r 000 /",
+]
+
+
+def padrao_destrutivo(comando: str) -> str | None:
+    """Retorna o padrão destrutivo encontrado no comando (ou None)."""
+    baixo = comando.lower()
+    for padrao in _PADROES_DESTRUTIVOS:
+        if padrao in baixo:
+            return padrao
+    return None
+
+
+def comando_shell(comando: str, timeout_s: int = 30) -> dict:
+    """Executa um comando shell DE VERDADE (após aprovação hash-vinculada).
+
+    Roda com as permissões do usuário, com tempo limite e saída limitada.
+    Padrões catastróficos são recusados antes mesmo da aprovação.
+    """
+    recusado = padrao_destrutivo(comando)
+    if recusado:
+        raise AcaoMacFalhou(
+            f"Comando recusado por segurança: contém o padrão destrutivo “{recusado}”. "
+            "Nem a aprovação autoriza isso."
+        )
+    try:
+        processo = subprocess.run(
+            comando, shell=True, capture_output=True, text=True, timeout=timeout_s
+        )
+    except subprocess.TimeoutExpired:
+        raise AcaoMacFalhou(f"Comando excedeu {timeout_s}s e foi interrompido.")
+    saida = (processo.stdout or "")[-4000:]
+    erros = (processo.stderr or "")[-2000:]
+    db.registrar_auditoria("agente", "macos_comando_shell", {
+        "comando": comando, "returncode": processo.returncode,
+    })
+    return {
+        "comando": comando,
+        "returncode": processo.returncode,
+        "stdout": saida,
+        "stderr": erros,
+    }
+
+
+def abrir_caminho(caminho: str) -> dict:
+    """Abre pasta/arquivo no Finder/app padrão (open do macOS)."""
+    processo = subprocess.run(["open", caminho], capture_output=True, text=True, timeout=15)
+    if processo.returncode != 0:
+        raise AcaoMacFalhou(f"Não consegui abrir “{caminho}”: {processo.stderr.strip()}")
+    db.registrar_auditoria("agente", "macos_abrir_caminho", {"caminho": caminho})
+    return {"caminho": caminho, "aberto": True}
+
+
+def lista_apps_instalados() -> list[str]:
+    """Nomes de aplicativos instalados (/Applications + /System/Applications)."""
+    apps: set[str] = set()
+    for pasta in ("/Applications", "/System/Applications"):
+        try:
+            processo = subprocess.run(["ls", pasta], capture_output=True, text=True, timeout=10)
+            for linha in processo.stdout.splitlines():
+                if linha.endswith(".app"):
+                    apps.add(linha[:-4])
+        except Exception:  # noqa: BLE001
+            continue
+    return sorted(apps)
+
+
+def info_sistema(tipo: str) -> str:
+    """Informações somente-leitura do sistema (sem aprovação)."""
+    comandos = {
+        "disco": ["df", "-h", "/"],
+        "memoria": ["sh", "-c", "sysctl -n hw.memsize | awk '{printf \"%.0f GB\", $1/1073741824}'"],
+        "macos": ["sw_vers"],
+        "bateria": ["pmset", "-g", "batt"],
+        "uptime": ["uptime"],
+    }
+    cmd = comandos.get(tipo)
+    if not cmd:
+        return f"informação desconhecida: {tipo}"
+    try:
+        processo = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        return (processo.stdout or processo.stderr or "").strip() or "(sem saída)"
+    except Exception as erro:  # noqa: BLE001
+        return f"erro: {erro}"
