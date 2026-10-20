@@ -54,11 +54,14 @@ cp .env.example .env            # opcional: ajuste porta, assinatura, token da e
 
 ## Execução
 
-**Como app de desktop (recomendado)** — janela nativa + servidor embutido:
+**Como app de desktop (recomendado)** — app **MAA** no Dock, janela nativa + servidor embutido:
 
 ```bash
-open "dist/AI Prospecting Employee.app"     # duplo clique no Finder também funciona
+open "dist/MAA.app"     # duplo clique no Finder também funciona
 ```
+
+O MAA.app é gerado com py2app em modo alias (`.venv/bin/python setup.py py2app`) — depende
+do projeto e do venv neste Mac (para levar em pendrive, gere o standalone — backlog).
 
 **Como servidor web puro** (para acessar de outros dispositivos na rede local):
 
