@@ -23,7 +23,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 
 from .. import db
-from ..adapters import sites
+from ..adapters import sites, websearch
 from ..config import settings
 from ..engine import approvals
 from .mensagens import Mensagem, registrar_agente
@@ -329,11 +329,25 @@ def _buscar_info(texto: str) -> list[Mensagem] | None:
         return [Mensagem(f"Fonte pública indisponível agora ({type(erro).__name__}). Tente de novo em instantes.")]
 
     if not candidatos:
+        # mapa vazio → busca na web (pessoas, profissionais, qualquer tema)
+        try:
+            web = websearch.buscar_detalhado(f"{alvo} {cidade or ''}".strip(), limite=5)
+        except websearch.BuscaBloqueada:
+            web = []
+        if web:
+            linhas = [f"· **[{r['titulo'][:90]}]({r['url']})**" for r in web]
+            return [Mensagem(
+                f"Não achei “{alvo}”"
+                + (f" em {cidade}" if cidade else "")
+                + " no mapa (OpenStreetMap), mas encontrei na **web**:\n\n" + "\n".join(linhas)
+                + "\n\nFontes: motores de busca públicos (agora). Para contatos diretos das "
+                  "empresas, diga: procure " + alvo + " em " + (cidade or "sua cidade") + "."
+            )]
         return [Mensagem(
-            f"Não encontrei estabelecimentos com “{alvo}”"
+            f"Não encontrei “{alvo}”"
             + (f" em {cidade}" if cidade else "")
-            + " no OpenStreetMap. Isso significa ausência na base pública — não que não exista. "
-              "Posso tentar uma pesquisa completa se você disser: procure " + alvo + " em " + (cidade or "sua cidade") + "."
+            + " nem no mapa nem na web agora (os motores estão bloqueando este IP — "
+              "registrei a limitação). Tente novamente em alguns minutos."
         )]
 
     blocos = []
@@ -372,11 +386,21 @@ def _buscar_info(texto: str) -> list[Mensagem] | None:
             f"\n\nObs.: o filtro “{qualificador}” não é pesquisável na fonte pública — "
             "confirme essa condição no site ou telefone de cada resultado."
         )
+    secao_web = ""
+    try:
+        web = websearch.buscar_detalhado(f"{alvo} {cidade or ''}".strip(), limite=4)
+        if web:
+            secao_web = "\n\n**Na web:**\n" + "\n".join(
+                f"· [{r['titulo'][:80]}]({r['url']})" for r in web
+            )
+    except websearch.BuscaBloqueada:
+        pass  # web indisponível agora; os dados do mapa já respondem
+
     return [Mensagem(
         f"Encontrei {len(blocos)} resultado(s) para “{alvo}”"
         + (f" em {cidade}" if cidade else "")
         + " (fonte: OpenStreetMap — telefones só aparecem se a fonte tiver):\n\n"
-        + "\n\n".join(blocos) + nota_qualificador
+        + "\n\n".join(blocos) + nota_qualificador + secao_web
     )]
 
 

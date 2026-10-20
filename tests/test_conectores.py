@@ -2,7 +2,16 @@
 import httpx
 import pytest
 
+import pytest
+
 from app.adapters import sites, websearch
+
+
+@pytest.fixture(autouse=True)
+def _sem_cooldown():
+    websearch.reset_cooldown()
+    yield
+    websearch.reset_cooldown()
 from app.engine.research import dominio_corresponde_ao_nome, dominio_de
 
 

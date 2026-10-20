@@ -128,13 +128,29 @@ def test_buscar_info_estabelecimento_por_nome_e_cidade(banco_tmp, monkeypatch):
     assert "openstreetmap.org" in r[0].texto
 
 
-def test_buscar_info_sem_resultado_e_honesto(banco_tmp, monkeypatch):
+def test_buscar_info_sem_mapa_cai_para_web(banco_tmp, monkeypatch):
     from app.adapters import nominatim
 
     monkeypatch.setattr(nominatim, "buscar", lambda consulta, limite=6, somente_brasil=True: [])
+    monkeypatch.setattr(assistente.websearch, "buscar_detalhado", lambda consulta, limite=5: [
+        {"url": "https://doctoralia.com.br/zezim", "titulo": "Zezin Motos — Doctoralia"},
+    ])
+    r = chatbot.responder('telefone das lojas "zezin motos" em Sorocaba')
+    assert "na **web**" in r[0].texto or "encontrei na" in r[0].texto.lower()
+    assert "Zezin Motos" in r[0].texto
+
+
+def test_buscar_info_sem_mapa_sem_web_e_honesto(banco_tmp, monkeypatch):
+    from app.adapters import nominatim
+    from app.adapters.websearch import BuscaBloqueada
+
+    monkeypatch.setattr(nominatim, "buscar", lambda consulta, limite=6, somente_brasil=True: [])
+    def bloqueada(consulta, limite=5):
+        raise BuscaBloqueada("todos os motores bloqueados")
+    monkeypatch.setattr(assistente.websearch, "buscar_detalhado", bloqueada)
     r = chatbot.responder('telefone das lojas "zezin motos" em Sorocaba')
     assert "não encontrei" in r[0].texto.lower()
-    assert "ausência na base pública" in r[0].texto.lower()
+    assert "bloqueando" in r[0].texto.lower()
 
 
 def test_buscar_info_enriquece_com_telefone_do_site(banco_tmp, monkeypatch):

@@ -19,6 +19,12 @@ def banco_tmp(tmp_path, monkeypatch):
     from app.engine.tasks import gerenciador_tarefas
 
     gerenciador_tarefas.aguardar_todas(timeout_s=10)
+    try:
+        from app.adapters import websearch
+
+        websearch.reset_cooldown()
+    except Exception:
+        pass
     caminho = tmp_path / "teste.sqlite3"
     object.__setattr__(settings, "caminho_banco", caminho)
     from app import db
