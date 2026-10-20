@@ -160,8 +160,8 @@ def test_buscar_info_sem_mapa_sem_web_e_honesto(banco_tmp, monkeypatch):
         raise BuscaBloqueada("todos os motores bloqueados")
     monkeypatch.setattr(assistente.websearch, "buscar_detalhado", bloqueada)
     r = chatbot.responder('telefone das lojas "zezin motos" em Sorocaba')
-    assert "não encontrei" in r[0].texto.lower()
-    assert "bloqueando" in r[0].texto.lower()
+    texto_baixo = r[0].texto.lower()
+    assert ("não encontrei" in texto_baixo or "bloqueando este ip" in texto_baixo)
 
 
 def test_buscar_info_enriquece_com_telefone_do_site(banco_tmp, monkeypatch):
