@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+import time
 from datetime import datetime
 
 from .. import db
@@ -285,3 +286,50 @@ def falar(texto: str, voz: str | None = None) -> bool:
     if processo.returncode != 0:
         subprocess.run(["say", texto_limpo], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
     return True
+
+
+def slack_gui_enviar(destino: str, mensagem: str) -> dict:
+    """Envia mensagem pelo app Slack do macOS via automação de teclado.
+
+    Fluxo: ativa o Slack → Cmd+K (Ir para) → digita o destino → Enter (abre a
+    conversa, que foca a composição) → cola a mensagem (clipboard) → Enter.
+    Requer o Slack logado. Auditado. A mensagem e o destino são os da ordem
+    explícita do usuário no chat.
+    """
+    destino_esc = destino.replace('"', "'")
+    subprocess.run(["open", "-a", "Slack"], check=True, timeout=15)
+    time.sleep(1.5)
+
+    script_navega = (
+        'tell application "System Events"\n'
+        '    tell process "Slack"\n'
+        '        set frontmost to true\n'
+        '        delay 0.6\n'
+        '        keystroke "k" using {command down}\n'
+        '        delay 1.2\n'
+        f'        keystroke "{_escapar(destino_esc)}"\n'
+        '        delay 1.8\n'
+        '        key code 36\n'
+        '        delay 2.0\n'
+        '    end tell\n'
+        'end tell'
+    )
+    executar_osascript(script_navega, timeout_s=30)
+
+    processo = subprocess.run(["pbcopy"], input=mensagem, text=True, timeout=10)
+    script_envia = (
+        'tell application "System Events"\n'
+        '    tell process "Slack"\n'
+        '        set frontmost to true\n'
+        '        delay 0.5\n'
+        '        keystroke "v" using {command down}\n'
+        '        delay 0.7\n'
+        '        key code 36\n'
+        '        delay 0.5\n'
+        '    end tell\n'
+        'end tell'
+    )
+    executar_osascript(script_envia, timeout_s=30)
+
+    db.registrar_auditoria("agente", "macos_slack_gui_enviar", {"destino": destino, "chars": len(mensagem)})
+    return {"destino": destino, "enviado_via": "Slack.app (GUI)", "chars": len(mensagem)}

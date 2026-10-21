@@ -713,10 +713,18 @@ def test_email_sem_conta_no_mail_e_honesto(banco_tmp, monkeypatch):
     assert db.listar("aprovacao", where="tipo_acao = 'enviar_email_mail'") == []
 
 
-def test_slack_sem_config_e_honesto(banco_tmp):
-    r = chatbot.responder("mande mensagem no slack para arthur dizendo: bom dia")
-    assert "Slack não está configurado" in r[0].texto
-    assert "api.slack.com" in r[0].texto
+def test_slack_sem_config_usa_app_do_mac(banco_tmp, monkeypatch):
+    """Sem token de bot, o Wilson usa o APP Slack do macOS via GUI."""
+    import app.engine.assistente as mod
+    abertos = []
+    monkeypatch.setattr(mod.macos_apps, "slack_gui_enviar",
+                        lambda destino, mensagem: abertos.append((destino, mensagem)) or
+                        {"destino": destino, "enviado_via": "Slack.app (GUI)"})
+    monkeypatch.setattr(mod.macos_apps, "lista_apps_instalados", lambda: ["Slack"])
+
+    r = chatbot.responder("mande mensagem no slack para arthur dizendo: bom dia, reunião às 14h")
+    assert abertos == [("arthur", "bom dia, reunião às 14h")]
+    assert "Slack.app" in r[0].texto
 
 
 def test_slack_com_token_envia_com_aprovacao(banco_tmp, monkeypatch):
@@ -747,4 +755,18 @@ def test_slack_com_token_envia_com_aprovacao(banco_tmp, monkeypatch):
 
     approvals.decidir(aprovacao["id"], aprovar=True)
     assert aguardar(lambda: db.buscar_um("aprovacao", aprovacao["id"])["estado"] == "executada")
+    assert enviados == [("arthur", "bom dia, reunião às 14h")]
+
+
+def test_slack_gui_envia_pelo_app(banco_tmp, monkeypatch):
+    from app.engine import assistente as mod
+
+    enviados = []
+    monkeypatch.setattr(mod.macos_apps, "slack_gui_enviar",
+                        lambda destino, mensagem: enviados.append((destino, mensagem)) or
+                        {"destino": destino, "enviado_via": "Slack.app (GUI)"})
+    monkeypatch.setattr(mod.macos_apps, "lista_apps_instalados", lambda: ["Slack"])
+
+    r = chatbot.responder("mande mensagem no slack para arthur dizendo: bom dia, reunião às 14h")
+    assert "Slack.app" in r[0].texto and "arthur" in r[0].texto
     assert enviados == [("arthur", "bom dia, reunião às 14h")]

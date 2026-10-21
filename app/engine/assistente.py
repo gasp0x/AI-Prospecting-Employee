@@ -258,8 +258,8 @@ def _abrir_app(texto: str) -> list[Mensagem] | None:
 
 def tentar(texto: str) -> list[Mensagem] | None:
     """Tenta as habilidades determinísticas; None = não é comando conhecido."""
-    for handler in (_voz_alternar, _abrir_no_chrome, _abrir_app, _lista_apps, _sistema_info, _shell, _abrir_caminho, _extrair_colidado, _hora_data, _calculo, _cotacao, _clima, _lembrete_sistema, _agenda,
-                    _email_chat, _lembrete_criar, _lembrete_listar, _slack, lista_nomes, _buscar_info,
+    for handler in (_voz_alternar, _abrir_no_chrome, _abrir_app, _lista_apps, _sistema_info, _shell, _abrir_caminho, _slack, _slack_gui, _extrair_colidado, _hora_data, _calculo, _cotacao, _clima, _lembrete_sistema, _agenda,
+                    _email_chat, _lembrete_criar, _lembrete_listar, lista_nomes, _buscar_info,
                     _resumir_url, _abrir_site, _anotar):
         try:
             resposta = handler(texto)
@@ -918,6 +918,40 @@ def extrair_nomes_pessoas(texto: str) -> list[str]:
     return nomes
 
 
+def _slack_gui(texto: str) -> list[Mensagem] | None:
+    """Envia pelo app Slack do macOS (GUI): "mande mensagem no slack para X: texto".
+
+    Usa o Slack logado do usuário — digita e envia via automação de teclado.
+    A ordem explícita do usuário no chat contém o conteúdo exato; auditado.
+    """
+    n = _norm(texto)
+    if "slack" not in n:
+        return None
+    if not re.search(r"\b(mand[ae]|envi[ae]|escrev[ae]|manda\s+uma?\s+mensagem|mensagem)\b", n):
+        return None
+
+    m_dest = re.search(r"\b(?:para|pro)\s+([@#]?[\wà-úÀ-Ú][\wà-úÀ-Ú._-]*)", texto, re.IGNORECASE)
+    if not m_dest:
+        return None
+    destino = m_dest.group(1).strip(",.")
+
+    m_corpo = re.search(r"\b(?:dizendo|com\s+o\s+texto|escrevendo|sobre)\s*[:]??\s*([\s\S]+)$", texto, re.IGNORECASE)
+    mensagem = m_corpo.group(1).lstrip(":").strip() if m_corpo else ""
+    if not mensagem or _norm(mensagem) == _norm(destino):
+        return [Mensagem(f"O que devo escrever para {destino}? Ex.: \"mande mensagem no slack para {destino} "
+                         "dizendo: bom dia, segue o relatório\".")]
+
+    try:
+        resultado = macos_apps.slack_gui_enviar(destino, mensagem)
+    except macos_apps.AcaoMacFalhou as erro:
+        return [Mensagem(str(erro))]
+    return [Mensagem(
+        f"✅ Enviado pelo **Slack.app** para **{destino}**:\n\n{mensagem}\n\n"
+        "(via automação de teclado no seu Slack logado — registrado na auditoria. "
+        "Confira na conversa; se algo saiu errado, me diga que refaço.)"
+    )]
+
+
 def _extrair_colidado(texto: str) -> list[Mensagem] | None:
     """Extrai dados estruturados de QUALQUER texto colado: "extrair: <conteúdo>".
 
@@ -964,14 +998,8 @@ def _slack(texto: str) -> list[Mensagem] | None:
         return None
 
     if not slack.configurado():
-        return [Mensagem(
-            "O Slack não está configurado. Uma vez:\n"
-            "1. Crie um app em api.slack.com/apps → \"From scratch\"\n"
-            "2. OAuth & Permissions → escopos de bot: chat:write, users:read, im:write\n"
-            "3. Install to Workspace → copie o token xoxb-…\n"
-            "4. Cole no `.env`: SLACK_BOT_TOKEN=xoxb-… e reinicie o Wilson\n\n"
-            "Alternativa simples: Incoming Webhook (SLACK_WEBHOOK_URL) — envia para um canal fixo."
-        )]
+        # sem token: deixa passar para o próximo handler (GUI via Slack.app do Mac)
+        return None
 
     m_dest = re.search(r"\b(?:para|no canal|pra)\s+([#@]?[\wà-úÀ-Ú][\wà-úÀ-Ú._-]*)", texto, re.IGNORECASE)
     destino = m_dest.group(1).strip(",.") if m_dest else None
