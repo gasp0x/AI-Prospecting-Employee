@@ -24,33 +24,21 @@
     form#entrada { display: flex; gap: 10px; padding: 14px 16px 18px; max-width: 860px; width: 100%; margin: 0 auto; }
     form#entrada textarea { flex: 1; min-height: 46px; max-height: 140px; resize: none; border-radius: 12px; }
     form#entrada button { border-radius: 12px; padding: 0 22px; font-size: 18px; }
-    .sugestoes { max-width: 860px; width: 100%; margin: 0 auto; padding: 10px 16px 0; display: flex; gap: 8px; flex-wrap: wrap; }
-    .sugestoes button { font-size: 12.5px; background: var(--cartao); color: var(--suave); border: 1px solid var(--borda); border-radius: 999px; padding: 6px 13px; cursor: pointer; }
-    .sugestoes button:hover { color: var(--texto); border-color: var(--suave); }
   </style>
 </head>
 <body>
 <header class="chat-topo">
   <strong>🤖 Funcionário de Prospecção</strong>
   <span style="font-size:11.5px;color:var(--suave)">execução local · evidências com fonte · ações só com aprovação</span>
-  <span style="margin-left:auto; display:flex; gap:12px">
+  <span style="margin-left:auto; display:flex; gap:12px; align-items:center">
     <a href="/painel">Painel</a><a href="/resultados">Resultados</a><a href="/aprovacoes">Aprovações</a><a href="/extensao">Navegador</a><a href="/exportar">Exportar</a><a href="/auditoria">Auditoria</a>
+    <button id="btn-voz" title="Wilson fala as respostas em voz alta" style="font-size:13px; background:none; border:1px solid var(--borda); border-radius:8px; padding:4px 9px; cursor:pointer">🔊</button>
+    <button id="btn-limpar" title="Apaga o histórico desta conversa" style="font-size:13px; background:none; border:1px solid var(--borda); border-radius:8px; padding:4px 9px; cursor:pointer">🧹</button>
   </span>
 </header>
 
 <div id="conversa"></div>
-<div class="sugestoes">
-  <button data-texto="procure dentistas em Curitiba (PR) com site próprio">🔍 dentistas em Curitiba</button>
-  <button data-texto="procure floriculturas em Porto Alegre (RS) com entrega própria">🌸 floriculturas em Porto Alegre</button>
-  <button data-texto="procure academias em São Paulo (SP) que usem check-in digital">💪 academias em São Paulo</button>
-  <button data-texto="status">status</button>
-  <button data-texto="resultados">resultados</button>
-  <button data-texto="cotação do dólar">cotação</button>
-  <button data-texto="aprovações">aprovações</button>
-  <button data-texto="ajuda">ajuda</button>
-  <button id="btn-limpar" title="Apaga o histórico desta conversa">🧹 limpar conversa</button>
-  <button id="btn-voz" title="Wilson fala as respostas em voz alta">🔊 modo voz: off</button>
-</div>
+
 <form id="entrada">
   <textarea id="campo" placeholder="Fale com seu funcionário e assistente: prospecção, cálculos, clima, lembretes, o que precisar…" autofocus></textarea>
   <button type="submit">➤</button>
@@ -123,8 +111,6 @@ document.querySelector("form#entrada").addEventListener("submit", (e) => { e.pre
 campo.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviar(campo.value); }
 });
-document.querySelectorAll(".sugestoes button[data-texto]").forEach((b) => b.addEventListener("click", () => enviar(b.dataset.texto)));
-
 const btnVoz = document.getElementById("btn-voz");
 async function atualizarVoz() {
   try {
