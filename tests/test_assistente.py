@@ -711,3 +711,40 @@ def test_email_sem_conta_no_mail_e_honesto(banco_tmp, monkeypatch):
     assert "nenhuma conta de e-mail configurada" in r[0].texto
     assert "Nada foi enviado" in r[0].texto
     assert db.listar("aprovacao", where="tipo_acao = 'enviar_email_mail'") == []
+
+
+def test_slack_sem_config_e_honesto(banco_tmp):
+    r = chatbot.responder("mande mensagem no slack para arthur dizendo: bom dia")
+    assert "Slack não está configurado" in r[0].texto
+    assert "api.slack.com" in r[0].texto
+
+
+def test_slack_com_token_envia_com_aprovacao(banco_tmp, monkeypatch):
+    enviados = []
+    monkeypatch.setattr(assistente.slack, "configurado", lambda: True)
+    monkeypatch.setattr(assistente.slack, "resolver_destino",
+                        lambda destino: {"tipo": "dm", "id": "D123", "nome": "Arthur"})
+    monkeypatch.setattr(assistente.slack, "_chamar", lambda metodo, payload: {"ok": True, "ts": "1"})
+
+    from app.engine import approvals
+    monkeypatch.setattr(approvals.macos_apps, "comando_shell", lambda comando, timeout_s=30: {})
+    monkeypatch.setattr(approvals.macos_apps, "mail_contas", lambda: 1)
+
+    def fake_enviar_slack(destino, texto):
+        enviados.append((destino, texto))
+        return {"ok": True, "destino": destino}
+    import app.engine.approvals as approvals_mod
+    # o executor chama slack_mod.enviar_para — patch no adapter (mesmo módulo)
+    import app.adapters.slack as slack_adapter
+    monkeypatch.setattr(slack_adapter, "enviar_para",
+                        lambda destino, texto: enviados.append((destino, texto)) or {"ok": True})
+
+    r = chatbot.responder("mande mensagem no slack para arthur dizendo: bom dia, reunião às 14h")
+    assert "Slack → arthur" in r[0].texto
+    aprovacao = db.listar("aprovacao", where="tipo_acao = 'enviar_mensagem_slack'")[0]
+    assert aprovacao["conteudo"] == "bom dia, reunião às 14h"
+    assert aprovacao["estado"] == "pendente"
+
+    approvals.decidir(aprovacao["id"], aprovar=True)
+    assert aguardar(lambda: db.buscar_um("aprovacao", aprovacao["id"])["estado"] == "executada")
+    assert enviados == [("arthur", "bom dia, reunião às 14h")]

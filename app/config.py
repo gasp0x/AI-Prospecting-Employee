@@ -66,6 +66,10 @@ class Config:
     # Voz do Wilson (síntese nativa do macOS)
     voz_nome: str = "Luciana"
 
+    # Slack (envio de mensagens com aprovação)
+    slack_bot_token: str = ""
+    slack_webhook_url: str = ""
+
     # LLM opcional (endpoint compatível com OpenAI). Vazio = modo determinístico.
     llm_base_url: str = ""
     llm_api_key: str = ""
@@ -105,6 +109,8 @@ def carregar_config() -> Config:
         token_telegram=pegar("AIPE_TELEGRAM_TOKEN"),
         openclaw_bin=pegar("AIPE_OPENCLAW_BIN"),
         voz_nome=pegar("AIPE_VOZ_NOME", "Luciana"),
+        slack_bot_token=pegar("SLACK_BOT_TOKEN"),
+        slack_webhook_url=pegar("SLACK_WEBHOOK_URL"),
         llm_base_url=pegar("LLM_BASE_URL"),
         llm_api_key=pegar("LLM_API_KEY"),
         llm_modelo=pegar("LLM_MODELO"),

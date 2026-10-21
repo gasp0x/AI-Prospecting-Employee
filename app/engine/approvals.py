@@ -109,6 +109,10 @@ def _executar_aprovada(ctx, params: dict) -> dict:
             db.atualizar("rascunho", int(rascunho_id), {"aprovacao_id": aprovacao_id})
     elif tipo == "executar_comando_shell":
         resultado = macos_apps.comando_shell(conteudo, timeout_s=int(extras.get("timeout_s", 30)))
+    elif tipo == "enviar_mensagem_slack":
+        from ..adapters import slack as slack_mod
+
+        resultado = slack_mod.enviar_para(extras.get("destino", ""), conteudo)
     elif tipo == "criar_lembrete_reminders":
         quando = datetime.fromisoformat(extras["quando_utc"])
         resultado = macos_apps.reminders_criar(extras.get("titulo", "Lembrete"), quando, conteudo)

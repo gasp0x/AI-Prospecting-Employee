@@ -27,7 +27,7 @@ import httpx
 from urllib.parse import urlparse
 
 from .. import db
-from ..adapters import brasilapi, macos_apps, nominatim, sites, websearch
+from ..adapters import brasilapi, macos_apps, nominatim, sites, slack, websearch
 from ..engine.evidence import extrair_entidades, extrair_pagina
 from ..config import settings
 from ..engine import approvals
@@ -259,7 +259,7 @@ def _abrir_app(texto: str) -> list[Mensagem] | None:
 def tentar(texto: str) -> list[Mensagem] | None:
     """Tenta as habilidades determinísticas; None = não é comando conhecido."""
     for handler in (_voz_alternar, _abrir_no_chrome, _abrir_app, _lista_apps, _sistema_info, _shell, _abrir_caminho, _extrair_colidado, _hora_data, _calculo, _cotacao, _clima, _lembrete_sistema, _agenda,
-                    _email_chat, _lembrete_criar, _lembrete_listar, lista_nomes, _buscar_info,
+                    _email_chat, _lembrete_criar, _lembrete_listar, _slack, lista_nomes, _buscar_info,
                     _resumir_url, _abrir_site, _anotar):
         try:
             resposta = handler(texto)
@@ -953,6 +953,52 @@ def _extrair_colidado(texto: str) -> list[Mensagem] | None:
     if not partes:
         return [Mensagem("Não encontrei pessoas, telefones, e-mails ou CNPJs no texto colado.")]
     return [Mensagem("**Dados extraídos do texto:**\n\n" + "\n\n".join(partes))]
+
+
+def _slack(texto: str) -> list[Mensagem] | None:
+    """Mensagens no Slack: "mande mensagem no slack para arthur: texto" (com aprovação)."""
+    n = _norm(texto)
+    if "slack" not in n:
+        return None
+    if not re.search(r"\b(mand[ae]|envi[ae]|escrev[ae]|mandar|enviar|mensagem)\b", n):
+        return None
+
+    if not slack.configurado():
+        return [Mensagem(
+            "O Slack não está configurado. Uma vez:\n"
+            "1. Crie um app em api.slack.com/apps → \"From scratch\"\n"
+            "2. OAuth & Permissions → escopos de bot: chat:write, users:read, im:write\n"
+            "3. Install to Workspace → copie o token xoxb-…\n"
+            "4. Cole no `.env`: SLACK_BOT_TOKEN=xoxb-… e reinicie o Wilson\n\n"
+            "Alternativa simples: Incoming Webhook (SLACK_WEBHOOK_URL) — envia para um canal fixo."
+        )]
+
+    m_dest = re.search(r"\b(?:para|no canal|pra)\s+([#@]?[\wà-úÀ-Ú][\wà-úÀ-Ú._-]*)", texto, re.IGNORECASE)
+    destino = m_dest.group(1).strip(",.") if m_dest else None
+    if destino and _norm(destino) == "slack":
+        destino = None
+    m_corpo = re.search(r"\b(?:dizendo|com\s+o\s+texto|escrevendo|sobre)\s*[:]?\s*([\s\S]+)$", texto, re.IGNORECASE)
+    mensagem = ""
+    if m_corpo and (not m_dest or m_corpo.start() > m_dest.start()):
+        mensagem = m_corpo.group(1).strip()
+
+    if not destino:
+        return [Mensagem("Para quem? Ex.: \"mande mensagem no slack para arthur dizendo: bom dia\" "
+                         "ou \"… no canal #vendas dizendo: proposta enviada\".")]
+    if not mensagem:
+        return [Mensagem(f"O que devo escrever para {destino}? Ex.: \"mande mensagem no slack para {destino} "
+                         "dizendo: bom dia, segue o relatório\".")]
+
+    aprovacao_id = approvals.solicitar(
+        tipo_acao="enviar_mensagem_slack",
+        resumo=f"ENVIAR mensagem no Slack para “{destino}”. Ao aprovar, é entregue no workspace.",
+        conteudo=mensagem,
+        params={"destino": destino},
+    )
+    return [Mensagem(
+        f"💬 Mensagem pronta para o **Slack → {destino}**:\n\n{mensagem}\n\n"
+        f"Responda **aprovar {aprovacao_id}** para enviar (hash registrado) · **negar {aprovacao_id}** cancela."
+    )]
 
 
 
