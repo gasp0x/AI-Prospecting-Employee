@@ -70,7 +70,8 @@ def _curl(metodo: str, url: str, dados: dict | None = None, timeout_s: int | Non
         for chave, valor in dados.items():
             comando += ["--data-urlencode", f"{chave}={valor}"]
     comando.append(url)
-    processo = subprocess.run(comando, capture_output=True, text=True, timeout=timeout + 10)
+    processo = subprocess.run(comando, capture_output=True, text=True,
+                              encoding="utf-8", errors="replace", timeout=timeout + 10)
     saida = processo.stdout
     if "===CURL_STATUS=" in saida:
         corpo, _, status = saida.rpartition("===CURL_STATUS=")

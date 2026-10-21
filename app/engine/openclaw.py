@@ -39,7 +39,8 @@ def consultar(mensagem: str, timeout_s: int = 120) -> tuple[str | None, str | No
     try:
         processo = subprocess.run(
             [binario(), "agent", "--local", "-m", mensagem, "--json"],
-            capture_output=True, text=True, timeout=timeout_s,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=timeout_s,
         )
     except (subprocess.SubprocessError, OSError) as erro:
         return None, f"falha ao executar o OpenClaw: {erro}"

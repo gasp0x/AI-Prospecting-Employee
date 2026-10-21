@@ -209,7 +209,7 @@ def comando_shell(comando: str, timeout_s: int = 30) -> dict:
 
 def abrir_caminho(caminho: str) -> dict:
     """Abre pasta/arquivo no Finder/app padrão (open do macOS)."""
-    processo = subprocess.run(["open", caminho], capture_output=True, text=True, timeout=15)
+    processo = subprocess.run(["open", caminho], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15)
     if processo.returncode != 0:
         raise AcaoMacFalhou(f"Não consegui abrir “{caminho}”: {processo.stderr.strip()}")
     db.registrar_auditoria("agente", "macos_abrir_caminho", {"caminho": caminho})
@@ -262,8 +262,8 @@ def falar(texto: str, voz: str | None = None) -> bool:
     texto_limpo = texto[:600]
     voz_final = voz or settings.voz_nome
     processo = subprocess.run(
-        ["say", "-v", voz_final, texto_limpo], capture_output=True, text=True, timeout=120
+        ["say", "-v", voz_final, texto_limpo], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120
     )
     if processo.returncode != 0:
-        subprocess.run(["say", texto_limpo], capture_output=True, text=True, timeout=120)
+        subprocess.run(["say", texto_limpo], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
     return True
