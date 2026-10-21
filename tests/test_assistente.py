@@ -660,3 +660,44 @@ def test_resposta_falada_quando_voz_ativa(banco_tmp, monkeypatch):
     corpo = {"texto": "que horas são?"}
     enviar_chat(corpo)
     assert falados and "Agora são" in falados[0]
+
+
+def test_email_linguagem_natural_cria_aprovacao_envio(banco_tmp, monkeypatch):
+    enviados = []
+    from app.engine import approvals
+
+    monkeypatch.setattr(approvals.macos_apps, "mail_enviar_email",
+                        lambda para, assunto, corpo: enviados.append((para, assunto, corpo)) or {"enviado": True})
+
+    frase = ("mande um email, fazendo um convite para uma reunião, sobre uma promoção, "
+             "Endereço: bigossijoaooflavio@gmail.com")
+    r = chatbot.responder(frase)
+    texto = r[0].texto
+    assert "ENVIAR de verdade" in texto or "ENVIAR" in texto.upper()
+    assert "bigossijoaooflavio@gmail.com" in texto
+    aprovacao = db.listar("aprovacao", where="tipo_acao = 'enviar_email_mail'")[0]
+    assert aprovacao["conteudo"]  # corpo gerado
+    assert "bigossijoaooflavio@gmail.com" in aprovacao["params_json"]
+
+    approvals.decidir(aprovacao["id"], aprovar=True)
+    assert aguardar(lambda: db.buscar_um("aprovacao", aprovacao["id"])["estado"] == "executada")
+    assert enviados[0][0] == "bigossijoaooflavio@gmail.com"
+    assert "reunião" in enviados[0][2].lower()  # convite menciona a reunião
+
+
+def test_abrir_no_chrome_logado(banco_tmp, monkeypatch):
+    abertos = []
+    import app.engine.assistente as mod
+    import app.adapters.websearch as ws_mod
+
+    monkeypatch.setattr(assistente.websearch, "_curl", lambda metodo, url, dados=None, timeout_s=None: (403, "captcha"))
+
+    def fake_run(cmd, **kwargs):
+        abertos.append(list(cmd))
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    r = chatbot.responder("abra no chrome https://example.com/promocao")
+    assert "Chrome" in r[0].texto
+    # o open -a do Chrome foi registrado
+    assert any("Google Chrome" in " ".join(c) for c in abertos)

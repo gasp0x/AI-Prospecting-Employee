@@ -84,6 +84,34 @@ def verificar_lembretes() -> list[db.sqlite3.Row]:
 
 
 
+# ---------- abrir página no Google Chrome logado do usuário ----------
+
+def _abrir_no_chrome(texto: str) -> list[Mensagem] | None:
+    """Abre página/busca no Google Chrome LOGADO do usuário (open -a, sem extensão)."""
+    n = _norm(texto)
+    if "chrome" not in n:
+        return None
+    m = re.search(r"\babr[aei](?:r)?\s+(?:no\s+|na\s+|o\s+)?chrome\b", n)
+    if not m:
+        return None
+    depois = texto[m.end():].strip(" ,.")
+    alvo = None
+    m_url = re.search(r"(https?://\S+)", depois)
+    if m_url:
+        alvo = m_url.group(1)
+    elif depois:
+        from urllib.parse import quote
+
+        alvo = "https://www.google.com/search?q=" + quote(depois)
+    if not alvo:
+        return None
+    try:
+        subprocess.run(["open", "-a", "Google Chrome", alvo], check=True, timeout=15)
+    except (subprocess.SubprocessError, OSError) as erro:
+        return [Mensagem(f"Não consegui abrir o Chrome: {erro}")]
+    return [Mensagem(f"✅ Abri no **Google Chrome** (suas sessões logadas): {alvo}")]
+
+
 # ---------- abrir aplicativos do sistema (open -a do macOS) ----------
 
 _APPS_CONHECIDOS = {
@@ -230,7 +258,7 @@ def _abrir_app(texto: str) -> list[Mensagem] | None:
 
 def tentar(texto: str) -> list[Mensagem] | None:
     """Tenta as habilidades determinísticas; None = não é comando conhecido."""
-    for handler in (_voz_alternar, _abrir_app, _lista_apps, _sistema_info, _shell, _abrir_caminho, _extrair_colidado, _hora_data, _calculo, _cotacao, _clima, _lembrete_sistema, _agenda,
+    for handler in (_voz_alternar, _abrir_no_chrome, _abrir_app, _lista_apps, _sistema_info, _shell, _abrir_caminho, _extrair_colidado, _hora_data, _calculo, _cotacao, _clima, _lembrete_sistema, _agenda,
                     _email_chat, _lembrete_criar, _lembrete_listar, lista_nomes, _buscar_info,
                     _resumir_url, _abrir_site, _anotar):
         try:
@@ -544,19 +572,53 @@ def _agenda(texto: str) -> list[Mensagem] | None:
 
 
 def _email_chat(texto: str) -> list[Mensagem] | None:
-    """Enviar e-mail de verdade pelo Mail (com aprovação do conteúdo)."""
-    m = re.search(
-        r"\benvie\s+(?:um\s+)?e-?mail\s+para\s+([\w.+-]+@[\w.-]+)"
-        r"(?:\s+com\s+(?:o\s+)?assunto\s+([^:,]+?))?"
-        r"(?:\s+(?:dizendo|com\s+o\s+texto|escrevendo)|:)\s*([^'].*)$",
+    """Envia e-mail de verdade pelo Mail — linguagem natural, com aprovação.
+
+    Ex.: "mande um email para foo@bar.com fazendo um convite para uma reunião
+    sobre a promoção" — o corpo é gerado por modelo determinístico com o que
+    você pediu (nada inventado além do template).
+    """
+    n = _norm(texto)
+    verbo = re.search(r"\b(mand[ae]|envi[ae]|mandar|enviar|dispar[ae])\b", n)
+    tem_email = re.search(r"\be-?mail\b", n)
+    if not (verbo and tem_email):
+        return None
+
+    m_dest = re.search(r"[\w.+-]+@[\w-]+\.[\w.-]+", texto)
+    if not m_dest:
+        return [Mensagem("Para quem? Ex.: \"mande um email para foo@bar.com fazendo um convite para uma reunião\".")]
+    para = m_dest.group(0)
+
+    m_tema = re.search(
+        r"\b(?:sobre|com\s+assunto(?:\s+sobre)?|acerca\s+de)\s+(.+?)(?:\s*,\s*(?:endere[çc]o|e-?mail)\b.*|[.;]|$)",
         texto, re.IGNORECASE,
     )
-    if not m:
-        m2 = re.search(r"\benvie\s+(?:um\s+)?e-?mail\s+para\s+([\w.+-]+@[\w.-]+)\s*$", texto, re.IGNORECASE)
-        if not m2:
-            return None
-        return [Mensagem("O que devo escrever? Ex.: \"envie e-mail para foo@bar.com com assunto Proposta dizendo: Olá…\"")]
-    para, assunto, corpo = m.group(1).strip(), (m.group(2) or "Contato").strip(), m.group(3).lstrip(":").strip()
+    tema = m_tema.group(1).strip(" ,.:") if m_tema else ""
+    tema = re.split(r"\s+dizendo\s*[:]?", tema, flags=re.IGNORECASE)[0].strip(" ,.:")
+
+    tipo = "convite" if re.search(r"\bconvit\w*\b", n) else "contato"
+    m_corpo = re.search(r"\b(?:dizendo|com\s+o\s+texto|escrevendo)\s*[:]\s*(.+)$", texto, re.IGNORECASE)
+    corpo_dado = m_corpo.group(1).strip() if m_corpo else None
+    titulo_tema = tema[:1].upper() + tema[1:] if tema else "nossa conversa"
+    if tipo == "convite" and "reuni" in n and not corpo_dado:
+        assunto = f"Convite — reunião sobre {titulo_tema[:60]}"
+        corpo = (
+            f"Olá!\n\n"
+            f"Você está convidado(a) para uma reunião sobre {tema or 'nossos assuntos'}.\n\n"
+            "A data e o horário serão definidos em conjunto — me diga qual o melhor momento para você.\n\n"
+            "Conto com sua presença!\n\nAtenciosamente,"
+        )
+    elif corpo_dado:
+        assunto = (titulo_tema[:70] or "Contato")
+        corpo = corpo_dado
+    else:
+        assunto = titulo_tema[:70] or "Contato"
+        corpo = (
+            f"Olá!\n\n"
+            f"Entrando em contato {(('sobre ' + tema) if tema else '')}.\n\n"
+            "Fico à disposição para conversarmos quando for melhor para você.\n\nAtenciosamente,"
+        )
+
     aprovacao_id = approvals.solicitar(
         tipo_acao="enviar_email_mail",
         resumo=f"ENVIAR e-mail real para {para} com assunto “{assunto}”. Ao aprovar, sai da sua caixa.",
@@ -564,8 +626,9 @@ def _email_chat(texto: str) -> list[Mensagem] | None:
         params={"destinatario": para, "assunto": assunto},
     )
     return [Mensagem(
-        f"E-mail pronto para **ENVIAR de verdade**:\n· Para: {para}\n· Assunto: {assunto}\n\n{corpo}\n\n"
-        f"Responda **aprovar {aprovacao_id}** para enviar (hash registrado). Negar cancela."
+        f"📧 E-mail pronto para **ENVIAR de verdade**:\n"
+        f"· Para: {para}\n· Assunto: {assunto}\n\n{corpo}\n\n"
+        f"Responda **aprovar {aprovacao_id}** para enviar (hash registrado) · **negar {aprovacao_id}** cancela."
     )]
 
 
