@@ -620,11 +620,20 @@ def _email_chat(texto: str) -> list[Mensagem] | None:
         )
 
     contas_mail = macos_apps.mail_contas()
-    if contas_mail == 0:
+    # Gmail pelo Chrome logado: pedido explícito OU Mail sem conta configurada
+    usa_gmail_chrome = bool(re.search(r"\b(gmail|chrome)\b", n)) or contas_mail == 0
+    if usa_gmail_chrome:
+        aprovacao_id = approvals.solicitar(
+            tipo_acao="enviar_email_gmail_chrome",
+            resumo=f"ENVIAR e-mail real pelo Gmail (Chrome logado) para {para} com assunto “{assunto}”. Ao aprovar, sai da sua caixa.",
+            conteudo=corpo,
+            params={"destinatario": para, "assunto": assunto},
+        )
         return [Mensagem(
-            "⛔ Seu Mail não tem nenhuma conta de e-mail configurada — o Mail DESCARTA o envio "
-            "silenciosamente nesse caso. Adicione uma conta em Mail → Configurações → Contas "
-            "e me chame de novo. Nada foi enviado."
+            f"📧 E-mail pronto para **ENVIAR de verdade** pelo **Gmail (Chrome logado)**:\n"
+            f"· Para: {para}\n· Assunto: {assunto}\n\n{corpo}\n\n"
+            f"Responda **aprovar {aprovacao_id}** para enviar (hash registrado) · **negar {aprovacao_id}** cancela. "
+            "O Wilson abre o compose preenchido no seu Chrome e aciona o envio (Cmd+Enter)."
         )]
     aprovacao_id = approvals.solicitar(
         tipo_acao="enviar_email_mail",

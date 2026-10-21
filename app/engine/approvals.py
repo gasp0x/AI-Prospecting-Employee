@@ -113,6 +113,10 @@ def _executar_aprovada(ctx, params: dict) -> dict:
         from ..adapters import slack as slack_mod
 
         resultado = slack_mod.enviar_para(extras.get("destino", ""), conteudo)
+    elif tipo == "enviar_email_gmail_chrome":
+        from ..adapters import chrome
+
+        resultado = chrome.gmail_enviar(extras["destinatario"], extras["assunto"], conteudo)
     elif tipo == "criar_lembrete_reminders":
         quando = datetime.fromisoformat(extras["quando_utc"])
         resultado = macos_apps.reminders_criar(extras.get("titulo", "Lembrete"), quando, conteudo)

@@ -770,3 +770,41 @@ def test_slack_gui_envia_pelo_app(banco_tmp, monkeypatch):
     r = chatbot.responder("mande mensagem no slack para arthur dizendo: bom dia, reunião às 14h")
     assert "Slack.app" in r[0].texto and "arthur" in r[0].texto
     assert enviados == [("arthur", "bom dia, reunião às 14h")]
+
+
+def test_email_gmail_chrome_fluxo_completo(banco_tmp, monkeypatch):
+    """Gmail pelo Chrome logado: compose pré-preenchido + Cmd+Enter + confirmação."""
+    from app.adapters import chrome
+    from app.engine import approvals
+
+    enviados = []
+    janelas = {"antes": 1, "depois": 1}
+
+    def fake_janelas():
+        return ["Janela 1"] * 1 if not enviados else ["Janela 1"]
+
+    monkeypatch.setattr(chrome, "_janelas_chrome", lambda: ["W1", "W2"] if not enviados else ["W1"])
+
+    def fake_open(cmd, **kwargs):
+        enviados.append(list(cmd))
+        return type("R", (), {"returncode": 0})()
+
+    monkeypatch.setattr(chrome.subprocess, "run", fake_open)
+
+    import time as time_mod
+    monkeypatch.setattr(chrome.time, "sleep", lambda s: None)
+
+    r = chatbot.responder("envie um email para bigossijoaooflavio@gmail.com, com a conta gmail que "
+                          "já está vinculada no chrome, o email é para agendar uma reunião falando "
+                          "sobre uma promoção de celular")
+    texto = r[0].texto
+    assert "Gmail (Chrome logado)" in texto
+    assert "bigossijoaooflavio@gmail.com" in texto
+    aprovacao = db.listar("aprovacao", where="tipo_acao = 'enviar_email_gmail_chrome'")[0]
+    assert aprovacao["estado"] == "pendente"
+
+    approvals.decidir(aprovacao["id"], aprovar=True)
+    assert aguardar(lambda: db.buscar_um("aprovacao", aprovacao["id"])["estado"] == "executada")
+    # o open do Chrome foi chamado com a URL de compose preenchida
+    assert any("mail.google.com" in " ".join(cmd) and "view=cm" in " ".join(cmd) for cmd in enviados)
+    assert any("bigossijoaooflavio" in " ".join(cmd) for cmd in enviados)
