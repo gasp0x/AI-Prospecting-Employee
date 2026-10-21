@@ -13,6 +13,8 @@ chave. Nominatim é reaproveitado para geocodificar o clima.
 from __future__ import annotations
 
 import ast
+import json
+import os
 import re
 import subprocess
 import threading
@@ -228,7 +230,7 @@ def _abrir_app(texto: str) -> list[Mensagem] | None:
 
 def tentar(texto: str) -> list[Mensagem] | None:
     """Tenta as habilidades determinísticas; None = não é comando conhecido."""
-    for handler in (_abrir_app, _lista_apps, _sistema_info, _shell, _abrir_caminho, _extrair_colidado, _hora_data, _calculo, _cotacao, _clima, _lembrete_sistema, _agenda,
+    for handler in (_voz_alternar, _abrir_app, _lista_apps, _sistema_info, _shell, _abrir_caminho, _extrair_colidado, _hora_data, _calculo, _cotacao, _clima, _lembrete_sistema, _agenda,
                     _email_chat, _lembrete_criar, _lembrete_listar, lista_nomes, _buscar_info,
                     _resumir_url, _abrir_site, _anotar):
         try:
@@ -886,6 +888,7 @@ def _extrair_colidado(texto: str) -> list[Mensagem] | None:
 
 def lista_nomes(texto: str) -> list[Mensagem] | None:
     """Lista de NOMES de pessoas/profissionais: busca, abre as páginas e extrai.
+    >>> DEBUG-ENTRADA lista_nomes v2 <<<
 
     Ex.: "nomes dos cardiologistas que trabalham no Santa Casa em SJC".
     Cada nome traz a fonte de onde foi extraído; se as páginas não expõem
@@ -903,6 +906,8 @@ def lista_nomes(texto: str) -> list[Mensagem] | None:
     ))
     if not gatilho_pessoa:
         return None
+    import sys as _sd
+    print(f">>> DEBUG lista_nomes: consulta={_limpar_consulta(texto)!r}", file=_sd.stderr, flush=True)
     consulta = _limpar_consulta(texto)
     if len(consulta) < 2:
         return None
@@ -949,6 +954,8 @@ def lista_nomes(texto: str) -> list[Mensagem] | None:
             continue
         pagina = extrair_pagina(coleta.url_final, coleta.html)
         pessoas = extrair_pessoas_com_dados(r.get("titulo", "") + "\n" + pagina.texto)
+        import sys as _s
+        print(f">>> EXTRAÇÃO[{coleta.url_final[:50]}] texto={pagina.texto[:100]!r} pessoas={pessoas}", file=_s.stderr, flush=True)
         if not pessoas:
             fontes_sem_nomes.append(coleta.url_final)
             continue
@@ -1105,3 +1112,49 @@ def busca_geral(texto: str) -> list[Mensagem]:
 
 def resposta_livre(texto: str) -> list[Mensagem]:
     return _livre(texto)
+
+
+# ---------- modo voz (Wilson fala as respostas) ----------
+
+_CAMINHO_VOZ = os.path.join(str(settings.diretorio_dados), "voz.json")
+
+
+def voz_ativa() -> bool:
+    try:
+        with open(_CAMINHO_VOZ, encoding="utf-8") as arquivo:
+            return bool(json.load(arquivo).get("ativa"))
+    except (OSError, ValueError):
+        return False
+
+
+def definir_voz(ativa: bool) -> None:
+    settings.diretorio_dados.mkdir(parents=True, exist_ok=True)
+    with open(_CAMINHO_VOZ, "w", encoding="utf-8") as arquivo:
+        json.dump({"ativa": bool(ativa)}, arquivo)
+
+
+def falar_resposta(texto: str) -> None:
+    """Fala um resumo curto da resposta (thread — não bloqueia o chat)."""
+    import threading
+
+    from ..adapters.macos_apps import falar
+
+    limpo = re.sub(r"[**`#▸·—]|\[(.*?)\]\(.*?\)", "", texto)
+    limpo = re.sub(r"\s+", " ", limpo).strip()[:300]
+    threading.Thread(target=lambda: falar(limpo), daemon=True).start()
+
+
+def _voz_alternar(texto: str) -> list[Mensagem] | None:
+    n = _norm(texto)
+    ativar = re.search(r"\b(ativ|lig|habilit)\w*\s+(o\s+)?modo voz\b", n)
+    desativar = re.search(r"\b(desativ|deslig)\w*\s+(o\s+)?modo voz\b", n)
+    if not ativar and not desativar:
+        return None
+    definir_voz(bool(ativar))
+    if ativar:
+        from ..adapters.macos_apps import falar
+
+        falar("Modo voz ativado. Pode falar comigo.")
+        return [Mensagem("🔊 **Modo voz ativado** — vou falar as respostas em voz alta. "
+                         "Para desativar: \"desative o modo voz\".")]
+    return [Mensagem("🔇 Modo voz desativado.")]

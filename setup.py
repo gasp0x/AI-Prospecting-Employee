@@ -7,7 +7,7 @@ repositório/venv — rápido e sempre atualizado com o código. Para gerar:
 from setuptools import setup
 
 setup(
-    app=["maa_desktop.py"],
+    app=["wilson_desktop.py"],
     data_files=[],
     options={
         "py2app": {
@@ -15,9 +15,9 @@ setup(
             "alias": True,
             "iconfile": "assets/app.icns",
             "plist": {
-                "CFBundleName": "MAA",
-                "CFBundleDisplayName": "MAA",
-                "CFBundleIdentifier": "br.arthur.maa",
+                "CFBundleName": "Wilson",
+                "CFBundleDisplayName": "Wilson",
+                "CFBundleIdentifier": "br.arthur.wilson",
                 "CFBundleShortVersionString": "0.2.0",
             },
             "excludes": ["tkinter"],

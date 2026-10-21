@@ -224,8 +224,8 @@ def buscar_detalhado(consulta: str, limite: int = 6) -> list[dict]:
     Cadeia Brave → DuckDuckGo; levanta `BuscaBloqueada` se todos falharem.
     """
     falhas: list[str] = []
-    for nome, funcao in (("brave", _brave_detalhado), ("duckduckgo", _ddg_detalhado),
-                         ("bing_rss", _bing_rss_detalhado), ("google_news", _gnews_detalhado),
+    for nome, funcao in (("bing_rss", _bing_rss_detalhado), ("brave", _brave_detalhado),
+                         ("duckduckgo", _ddg_detalhado), ("google_news", _gnews_detalhado),
                          ("wikipedia", _wikipedia_detalhado)):
         if _em_cooldown(nome):
             falhas.append(f"{nome}: em resfriamento após bloqueio recente (tenta de novo em instantes)")

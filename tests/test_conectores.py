@@ -73,7 +73,7 @@ def test_ddg_bloqueado_cai_para_brave(banco_tmp, monkeypatch):
     )
 
     def fake_curl(metodo, url, dados=None, timeout_s=None):
-        if metodo == "POST":
+        if "duckduckgo" in url:
             return 202, pagina_anomalia
         return 200, pagina_brave
 

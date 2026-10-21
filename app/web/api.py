@@ -1,6 +1,8 @@
 """API JSON e WebSocket da extensão (servidos no mesmo processo da interface)."""
 from __future__ import annotations
 
+import threading
+
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from ..adapters.browser import ponte_navegador
@@ -18,6 +20,10 @@ def enviar_chat(corpo: dict):
         return {"erro": "mensagem vazia"}
     chatbot.registrar_usuario(texto)
     respostas = chatbot.responder(texto)
+    from ..engine.assistente import falar_resposta, voz_ativa
+
+    if voz_ativa() and respostas:
+        threading.Thread(target=falar_resposta, args=(respostas[0].texto,), daemon=True).start()
     return {
         "respostas": [
             {
@@ -40,6 +46,23 @@ def limpar_chat():
     with transacao() as conn:
         conn.execute("DELETE FROM chat_msg")
     return {"ok": True}
+
+
+@api_router.post("/api/chat/voz")
+def alternar_voz(corpo: dict):
+    """Ativa/desativa o modo voz (Wilson fala as respostas)."""
+    from ..engine.assistente import definir_voz, voz_ativa
+
+    ativa = bool(corpo.get("ativa"))
+    definir_voz(ativa)
+    return {"voz_ativa": voz_ativa()}
+
+
+@api_router.get("/api/chat/voz")
+def estado_voz():
+    from ..engine.assistente import voz_ativa
+
+    return {"voz_ativa": voz_ativa()}
 
 
 @api_router.get("/api/chat/mensagens")

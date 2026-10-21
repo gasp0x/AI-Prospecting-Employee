@@ -189,7 +189,8 @@ def comando_shell(comando: str, timeout_s: int = 30) -> dict:
         )
     try:
         processo = subprocess.run(
-            comando, shell=True, capture_output=True, text=True, timeout=timeout_s
+            comando, shell=True, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=timeout_s
         )
     except subprocess.TimeoutExpired:
         raise AcaoMacFalhou(f"Comando excedeu {timeout_s}s e foi interrompido.")
@@ -220,7 +221,8 @@ def lista_apps_instalados() -> list[str]:
     apps: set[str] = set()
     for pasta in ("/Applications", "/System/Applications"):
         try:
-            processo = subprocess.run(["ls", pasta], capture_output=True, text=True, timeout=10)
+            processo = subprocess.run(["ls", pasta], capture_output=True, text=True,
+                                      encoding="utf-8", errors="replace", timeout=10)
             for linha in processo.stdout.splitlines():
                 if linha.endswith(".app"):
                     apps.add(linha[:-4])
@@ -242,7 +244,26 @@ def info_sistema(tipo: str) -> str:
     if not cmd:
         return f"informação desconhecida: {tipo}"
     try:
-        processo = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        processo = subprocess.run(cmd, capture_output=True, text=True,
+                                  encoding="utf-8", errors="replace", timeout=10)
         return (processo.stdout or processo.stderr or "").strip() or "(sem saída)"
     except Exception as erro:  # noqa: BLE001
         return f"erro: {erro}"
+
+
+def falar(texto: str, voz: str | None = None) -> bool:
+    """Fala o texto em voz alta (síntese nativa do macOS).
+
+    Tenta a voz pt-BR (Luciana); se não existir, usa a voz padrão.
+    Retorna True se falou. Bloqueia até terminar — chame em thread.
+    """
+    from ..config import settings
+
+    texto_limpo = texto[:600]
+    voz_final = voz or settings.voz_nome
+    processo = subprocess.run(
+        ["say", "-v", voz_final, texto_limpo], capture_output=True, text=True, timeout=120
+    )
+    if processo.returncode != 0:
+        subprocess.run(["say", texto_limpo], capture_output=True, text=True, timeout=120)
+    return True

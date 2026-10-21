@@ -143,7 +143,7 @@ def _run():
     exec(compile(source, script, "exec"), globals(), globals())
 
 
-DEFAULT_SCRIPT='/Users/arthur/AI-Prospecting-Employee/maa_desktop.py'
+DEFAULT_SCRIPT='/Users/arthur/AI-Prospecting-Employee/wilson_desktop.py'
 SCRIPT_MAP={}
 try:
     _run()

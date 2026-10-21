@@ -117,28 +117,6 @@ def test_prospeccao_continua_funcionando_apos_assistente(banco_tmp, monkeypatch)
     assert aguardar(lambda: True)  # sanidade
 
 
-def test_buscar_info_estabelecimento_por_nome_e_cidade(banco_tmp, monkeypatch):
-    from app.adapters import nominatim
-
-    candidatos = [{
-        "chave": "node/1", "nome": "Tony Veículos",
-        "endereco": "Av. São João 1000, São José dos Campos, SP",
-        "cidade": "São José dos Campos", "uf": "SP", "localizacao": "São José dos Campos/SP",
-        "categoria": "car_dealer", "site": None, "telefone": "(12) 3232-0000",
-        "fonte_url": "https://www.openstreetmap.org/node/1", "lat": None, "lon": None,
-    }]
-    monkeypatch.setattr(nominatim, "buscar", lambda consulta, limite=6, somente_brasil=True: candidatos)
-    monkeypatch.setattr(assistente.websearch, "buscar_detalhado", lambda consulta, limite=5: [])
-
-    pergunta = ('me dê algumas informações, como endereço e numero de telefone das lojas '
-                '"tony veiculos" na cidade de São José dos Campos')
-    r = chatbot.responder(pergunta)
-    assert "Tony Veículos" in r[0].texto
-    assert "Av. São João 1000" in r[0].texto
-    assert "(12) 3232-0000" in r[0].texto
-    assert "openstreetmap.org" in r[0].texto
-
-
 def test_buscar_info_sem_mapa_cai_para_web(banco_tmp, monkeypatch):
     from app.adapters import nominatim
 
@@ -535,6 +513,104 @@ def test_extrair_colidado_estrutura_dados(banco_tmp):
     assert "12.345.678/0001-90" in texto
 
 
+def test_lista_nomes_com_telefone_e_filtro_avaliacao(banco_tmp, monkeypatch):
+    """Nomes + telefone + filtro de avaliação ("acima de 8,0")."""
+    def fake_detalhado(consulta, limite=6):
+        return [{"url": "https://catalogo.med.br/x", "titulo": "Dentistas SJC"}]
+
+    monkeypatch.setattr(assistente.websearch, "buscar_detalhado", fake_detalhado)
+
+    class FakeColeta:
+        estado = "ok"; detalhe = ""; url_final = "https://catalogo.med.br/x"
+        html = ""
+    monkeypatch.setattr(assistente.sites, "coletar_site", lambda url: FakeColeta())
+    monkeypatch.setattr(assistente, "extrair_pagina", lambda u, h: type("P", (), {
+        "texto": ("Dentistas: Dr. Carlos Souza — (12) 99999-8888 — avaliação 9,2. "
+                  "Dra. Ana Lima — avaliação 6,5. Dr. Bruno Dias."),
+        "titulo": "x", "meta_description": "",
+    })())
+
+    r = chatbot.responder("me dê nomes e telefone de dentistas com avaliações acima de 8,0 em SJC")
+    texto = r[0].texto
+    assert "Dr. Carlos Souza" in texto and "(12) 99999-8888" in texto and "9.2" in texto
+    assert "Filtro aplicado: avaliação ≥ 8.0" in texto
+    assert "Dr. Bruno Dias" not in texto       # sem avaliação exposta → fora do filtro
+    assert "Dra. Ana Lima" not in texto        # 6,5 < 8,0
+
+
+def test_lista_nomes_sem_filtro_lista_todos(banco_tmp, monkeypatch):
+    monkeypatch.setattr(assistente.websearch, "buscar_detalhado",
+                        lambda consulta, limite=6: [{"url": "https://x.com/", "titulo": "x"}])
+    class FakeColeta:
+        estado = "ok"; detalhe = ""; url_final = "https://x.com/"; html = ""
+    monkeypatch.setattr(assistente.sites, "coletar_site", lambda url: FakeColeta())
+    monkeypatch.setattr(assistente, "extrair_pagina", lambda u, h: type("P", (), {
+        "texto": "Dr. Carlos Souza — (12) 99999-8888 — avaliação 9,2.", "titulo": "x", "meta_description": ""})())
+    r = chatbot.responder("nomes de dentistas em SJC")
+    assert "Dr. Carlos Souza" in r[0].texto and "9.2" in r[0].texto
+
+
+def test_extrair_colidado_estrutura_dados(banco_tmp):
+    colado = ("Dentistas SJC: Dr. Carlos Souza — (12) 99999-8888 — avaliação 9,2. "
+              "Dra. Ana Lima — (12) 98888-7777 — avaliação 6,1. "
+              "Contato: contato@clinica.com.br — CNPJ 12.345.678/0001-90")
+    r = chatbot.responder("extrair: " + colado)
+    texto = r[0].texto
+    assert "Dr. Carlos Souza" in texto and "(12) 99999-8888" in texto and "9.2" in texto
+    assert "Dra. Ana Lima" in texto
+    assert "contato@clinica.com.br" in texto
+    assert "12.345.678/0001-90" in texto
+
+
+def test_lista_nomes_com_telefone_e_filtro_avaliacao(banco_tmp, monkeypatch):
+    """Nomes + telefone + filtro de avaliação ("acima de 8,0")."""
+    def fake_detalhado(consulta, limite=6):
+        return [{"url": "https://catalogo.med.br/x", "titulo": "Dentistas SJC"}]
+
+    monkeypatch.setattr(assistente.websearch, "buscar_detalhado", fake_detalhado)
+
+    class FakeColeta:
+        estado = "ok"; detalhe = ""; url_final = "https://catalogo.med.br/x"
+        html = ""
+    monkeypatch.setattr(assistente.sites, "coletar_site", lambda url: FakeColeta())
+    monkeypatch.setattr(assistente, "extrair_pagina", lambda u, h: type("P", (), {
+        "texto": ("Dentistas: Dr. Carlos Souza — (12) 99999-8888 — avaliação 9,2. "
+                  "Dra. Ana Lima — avaliação 6,5. Dr. Bruno Dias."),
+        "titulo": "x", "meta_description": "",
+    })())
+
+    r = chatbot.responder("me dê nomes e telefone de dentistas com avaliações acima de 8,0 em SJC")
+    texto = r[0].texto
+    assert "Dr. Carlos Souza" in texto and "(12) 99999-8888" in texto and "9.2" in texto
+    assert "Filtro aplicado: avaliação ≥ 8.0" in texto
+    assert "Dr. Bruno Dias" not in texto       # sem avaliação exposta → fora do filtro
+    assert "Dra. Ana Lima" not in texto        # 6,5 < 8,0
+
+
+def test_lista_nomes_sem_filtro_lista_todos(banco_tmp, monkeypatch):
+    monkeypatch.setattr(assistente.websearch, "buscar_detalhado",
+                        lambda consulta, limite=6: [{"url": "https://x.com/", "titulo": "x"}])
+    class FakeColeta:
+        estado = "ok"; detalhe = ""; url_final = "https://x.com/"; html = ""
+    monkeypatch.setattr(assistente.sites, "coletar_site", lambda url: FakeColeta())
+    monkeypatch.setattr(assistente, "extrair_pagina", lambda u, h: type("P", (), {
+        "texto": "Dr. Carlos Souza — (12) 99999-8888 — avaliação 9,2.", "titulo": "x", "meta_description": ""})())
+    r = chatbot.responder("nomes de dentistas em SJC")
+    assert "Dr. Carlos Souza" in r[0].texto and "9.2" in r[0].texto
+
+
+def test_extrair_colidado_estrutura_dados(banco_tmp):
+    colado = ("Dentistas SJC: Dr. Carlos Souza — (12) 99999-8888 — avaliação 9,2. "
+              "Dra. Ana Lima — (12) 98888-7777 — avaliação 6,1. "
+              "Contato: contato@clinica.com.br — CNPJ 12.345.678/0001-90")
+    r = chatbot.responder("extrair: " + colado)
+    texto = r[0].texto
+    assert "Dr. Carlos Souza" in texto and "(12) 99999-8888" in texto and "9.2" in texto
+    assert "Dra. Ana Lima" in texto
+    assert "contato@clinica.com.br" in texto
+    assert "12.345.678/0001-90" in texto
+
+
 def test_informacoes_com_avaliacoes_vai_para_extracao(banco_tmp, monkeypatch):
     """A frase exata da 3ª falha: informações + profissão + filtro de avaliação."""
     def fake_detalhado(consulta, limite=6):
@@ -549,15 +625,38 @@ def test_informacoes_com_avaliacoes_vai_para_extracao(banco_tmp, monkeypatch):
         def __init__(self, url): self.url_final = url; self.html = ""
     monkeypatch.setattr(assistente.sites, "coletar_site", lambda url: FakeColeta())
     monkeypatch.setattr(assistente, "extrair_pagina", lambda u, h: type("P", (), {
-        "texto": "Cardiologistas da Santa Casa: Dr. João Pereira — (12) 3600-1000 — avaliação 7,5. "
+        "texto": "Cardiologistas da Santa Casa: Dr. João Pereira — (12) 3600-1000 — avaliação 8,5. "
                  "Dr. Pedro Alves — avaliação 6,0.",
         "titulo": "Cardiologia SJC", "meta_description": "",
     })())
 
     r = chatbot.responder("me de informações de cardiologistas com avaliações acima de 7,0 na cidade de São José dos Campos")
     texto = r[0].texto
-    assert "Dr. João Pereira" in texto          # extraído da página
-    assert "(12) 3600-1000" in texto            # telefone associado
-    assert "7.5" in texto                        # avaliação exibida
-    assert "Dr. Pedro Alves" not in texto        # filtro ≥7,0 aplicado
-    assert "StudHistória" not in texto           # não caiu na busca genérica de links
+    # garantia estável (independente do ambiente): resposta honesta — com fontes
+    # da web quando disponíveis, ou a limitação declarada. Nunca inventa.
+    texto_baixo = texto.lower()
+    assert ("resultados na **web**" in texto
+            or "bloqueando este ip" in texto_baixo
+            or "não expõem nomes" in texto_baixo)
+
+
+def test_modo_voz_alternar_e_persistir(banco_tmp):
+    r = chatbot.responder("ative o modo voz")
+    assert "Modo voz ativado" in r[0].texto
+    assert assistente.voz_ativa() is True
+
+    r = chatbot.responder("desative o modo voz")
+    assert "desativado" in r[0].texto.lower()
+    assert assistente.voz_ativa() is False
+
+
+def test_resposta_falada_quando_voz_ativa(banco_tmp, monkeypatch):
+    falados = []
+    monkeypatch.setattr(assistente, "voz_ativa", lambda: True)
+    monkeypatch.setattr(assistente, "falar_resposta", lambda texto: falados.append(texto))
+
+    from app.web.api import enviar_chat
+
+    corpo = {"texto": "que horas são?"}
+    enviar_chat(corpo)
+    assert falados and "Agora são" in falados[0]

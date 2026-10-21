@@ -46,7 +46,7 @@ def main() -> int:
 
     url = f"http://{settings.host}:{settings.porta}/"
     webview.create_window(
-        "MAA",
+        "Wilson",
         url,
         width=1280,
         height=880,

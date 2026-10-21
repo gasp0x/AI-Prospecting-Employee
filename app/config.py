@@ -63,6 +63,9 @@ class Config:
     # OpenClaw opcional (cérebro generalista "por baixo dos panos")
     openclaw_bin: str = ""
 
+    # Voz do Wilson (síntese nativa do macOS)
+    voz_nome: str = "Luciana"
+
     # LLM opcional (endpoint compatível com OpenAI). Vazio = modo determinístico.
     llm_base_url: str = ""
     llm_api_key: str = ""
@@ -101,6 +104,7 @@ def carregar_config() -> Config:
         assinatura=pegar("AIPE_ASSINATURA"),
         token_telegram=pegar("AIPE_TELEGRAM_TOKEN"),
         openclaw_bin=pegar("AIPE_OPENCLAW_BIN"),
+        voz_nome=pegar("AIPE_VOZ_NOME", "Luciana"),
         llm_base_url=pegar("LLM_BASE_URL"),
         llm_api_key=pegar("LLM_API_KEY"),
         llm_modelo=pegar("LLM_MODELO"),

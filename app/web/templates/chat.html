@@ -49,6 +49,7 @@
   <button data-texto="aprovações">aprovações</button>
   <button data-texto="ajuda">ajuda</button>
   <button id="btn-limpar" title="Apaga o histórico desta conversa">🧹 limpar conversa</button>
+  <button id="btn-voz" title="Wilson fala as respostas em voz alta">🔊 modo voz: off</button>
 </div>
 <form id="entrada">
   <textarea id="campo" placeholder="Fale com seu funcionário e assistente: prospecção, cálculos, clima, lembretes, o que precisar…" autofocus></textarea>
@@ -123,6 +124,23 @@ campo.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviar(campo.value); }
 });
 document.querySelectorAll(".sugestoes button[data-texto]").forEach((b) => b.addEventListener("click", () => enviar(b.dataset.texto)));
+
+const btnVoz = document.getElementById("btn-voz");
+async function atualizarVoz() {
+  try {
+    const r = await fetch("/api/chat/voz");
+    const d = await r.json();
+    btnVoz.textContent = d.voz_ativa ? "🔊 modo voz: ON" : "🔊 modo voz: off";
+    btnVoz.style.borderColor = d.voz_ativa ? "var(--acao)" : "";
+  } catch { /* ignora */ }
+}
+btnVoz.addEventListener("click", async () => {
+  const r = await fetch("/api/chat/voz");
+  const d = await r.json();
+  await fetch("/api/chat/voz", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ ativa: !d.voz_ativa }) });
+  atualizarVoz();
+});
+atualizarVoz();
 
 document.getElementById("btn-limpar").addEventListener("click", async () => {
   if (!confirm("Apagar o histórico desta conversa? (tarefas e resultados não são afetados)")) return;

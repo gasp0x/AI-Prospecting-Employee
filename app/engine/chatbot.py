@@ -131,6 +131,7 @@ def _ajuda() -> Mensagem:
         "   avaliações, e-mails e CNPJs estruturados (útil para páginas que bloqueiam robôs)\n"
         "🌐 **Resumos** — \"resume https://exemplo.com.br\" (extrativo) · \"abra github\"\n"
         "🔎 **Busca geral na web** — \"me dê nomes de cardiologistas no Santa Casa em SJC\", \"quem foi Machado de Assis?\"\n"
+        "🦞 **Eu sou o Wilson** — seu assistente; também estou no Telegram\n"
         "🖥 **Sistema** — \"abra o calendário\" · \"abri\u3000qualquer app instalado\" · \"espaço em disco\" · \"bateria\"\n"
         "   · \"rode: ls -la\" → executa comando no terminal (sempre com aprovação do comando exato)\n"
         "   · \"abra a pasta Documentos\" · \"apps instalados\"\n"
