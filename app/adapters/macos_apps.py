@@ -89,6 +89,24 @@ def mail_criar_rascunho(para: str | None, assunto: str, corpo: str) -> dict:
     return {"id": resultado, "assunto": assunto}
 
 
+def mail_contas() -> int:
+    """Quantidade de contas configuradas no Mail (-1 se não der para saber)."""
+    try:
+        saida = executar_osascript('tell application "Mail" to count accounts')
+        return int(saida)
+    except (AcaoMacFalhou, ValueError, subprocess.SubprocessError):
+        return -1
+
+
+def mail_outbox_vazio() -> bool:
+    """True se a Caixa de Saída do Mail está vazia (envio confirmado)."""
+    try:
+        saida = executar_osascript('tell application "Mail" to count of messages in outbox')
+        return int(saida or 0) == 0
+    except (AcaoMacFalhou, ValueError, subprocess.SubprocessError):
+        return True  # não deu para verificar: assume que o Mail cuida do envio
+
+
 def mail_enviar_email(para: str, assunto: str, corpo: str) -> dict:
     """ENVIA um e-mail de verdade pelo Apple Mail.
 

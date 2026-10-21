@@ -619,6 +619,13 @@ def _email_chat(texto: str) -> list[Mensagem] | None:
             "Fico à disposição para conversarmos quando for melhor para você.\n\nAtenciosamente,"
         )
 
+    contas_mail = macos_apps.mail_contas()
+    if contas_mail == 0:
+        return [Mensagem(
+            "⛔ Seu Mail não tem nenhuma conta de e-mail configurada — o Mail DESCARTA o envio "
+            "silenciosamente nesse caso. Adicione uma conta em Mail → Configurações → Contas "
+            "e me chame de novo. Nada foi enviado."
+        )]
     aprovacao_id = approvals.solicitar(
         tipo_acao="enviar_email_mail",
         resumo=f"ENVIAR e-mail real para {para} com assunto “{assunto}”. Ao aprovar, sai da sua caixa.",

@@ -241,6 +241,7 @@ def test_email_real_pelo_chat_com_aprovacao(banco_tmp, monkeypatch):
     from app.engine import approvals
 
     enviados = []
+    monkeypatch.setattr(approvals.macos_apps, "mail_contas", lambda: 1)
     monkeypatch.setattr(approvals.macos_apps, "mail_enviar_email",
                         lambda para, assunto, corpo: enviados.append((para, assunto, corpo)) or {"enviado": True})
 
@@ -701,3 +702,12 @@ def test_abrir_no_chrome_logado(banco_tmp, monkeypatch):
     assert "Chrome" in r[0].texto
     # o open -a do Chrome foi registrado
     assert any("Google Chrome" in " ".join(c) for c in abertos)
+
+
+def test_email_sem_conta_no_mail_e_honesto(banco_tmp, monkeypatch):
+    """Mail sem nenhuma conta configurada → mensagem honesta, sem aprovação vazia."""
+    monkeypatch.setattr(assistente.macos_apps, "mail_contas", lambda: 0)
+    r = chatbot.responder("mande um email para foo@bar.com fazendo um convite para uma reunião")
+    assert "nenhuma conta de e-mail configurada" in r[0].texto
+    assert "Nada foi enviado" in r[0].texto
+    assert db.listar("aprovacao", where="tipo_acao = 'enviar_email_mail'") == []
